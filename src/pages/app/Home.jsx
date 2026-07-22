@@ -22,7 +22,9 @@ const statusStyle = {
 function SessionCard({ session }) {
   const Icon = session.type === "meeting" ? UsersIcon : User;
   return (
-    <div className="flex items-center gap-4 rounded-2xl border border-line bg-paper-raised p-4 shadow-note transition-shadow hover:shadow-note-lg">
+    <Link
+      to={`/app/board/${session.id}`}
+      className="flex items-center gap-4 rounded-2xl border border-line bg-paper-raised p-4 shadow-note transition-shadow hover:shadow-note-lg">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-periwinkle-tint">
         <Icon className="h-5 w-5 text-periwinkle-deep" />
       </div>
@@ -40,7 +42,7 @@ function SessionCard({ session }) {
       >
         {session.status}
       </span>
-    </div>
+    </Link>
   );
 }
 

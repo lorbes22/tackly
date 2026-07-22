@@ -69,10 +69,14 @@ export default {
         ring: 'hsl(var(--ring))',
       },
       boxShadow: {
-        // Post-it shadows: soft and close, like paper sitting on paper
+        // Soft chrome shadows: paper sitting on paper
         note: '0 1px 2px rgba(38, 36, 31, 0.08), 0 3px 10px rgba(38, 36, 31, 0.09)',
         'note-lg': '0 2px 4px rgba(38, 36, 31, 0.08), 0 8px 24px rgba(38, 36, 31, 0.12)',
         panel: '0 1px 3px rgba(38, 36, 31, 0.06), 0 12px 40px rgba(38, 36, 31, 0.10)',
+        // Neubrutal node-card shadows: hard ink offset, no blur
+        brutal: '4px 4px 0 0 #26241F',
+        'brutal-sm': '2px 2px 0 0 #26241F',
+        'brutal-lg': '6px 6px 0 0 #26241F',
       },
       keyframes: {
         'pop-in': {

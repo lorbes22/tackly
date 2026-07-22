@@ -6,6 +6,7 @@ import Login from "@/pages/auth/Login";
 import Signup from "@/pages/auth/Signup";
 import AppLayout from "@/layouts/AppLayout";
 import Home from "@/pages/app/Home";
+import Board from "@/pages/app/Board";
 import NewSession from "@/pages/app/NewSession";
 import SearchPage from "@/pages/app/SearchPage";
 import SettingsPage from "@/pages/app/SettingsPage";
@@ -22,6 +23,16 @@ export default function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+
+          {/* Canvas-first: the board fills the viewport, outside the app chrome */}
+          <Route
+            path="/app/board/:sessionId"
+            element={
+              <RequireAuth>
+                <Board />
+              </RequireAuth>
+            }
+          />
 
           <Route
             path="/app"

@@ -3,13 +3,12 @@ import { Logo } from "@/components/Logo";
 import { useAuth } from "@/lib/AuthContext";
 import { ArrowRight } from "lucide-react";
 
-// Static hero cluster — a taste of the board, in the real node palette
+// Static hero cluster — a taste of the board, styled like the real node cards
 const heroNotes = [
   {
     type: "Idea",
     text: "What if onboarding was one question?",
     color: "bg-note-lavender",
-    edge: "border-note-lavender-edge",
     rotation: "-rotate-3",
     pos: "left-0 top-4",
   },
@@ -17,7 +16,6 @@ const heroNotes = [
     type: "Decision",
     text: "Ship the beta to 20 users Friday",
     color: "bg-note-sky",
-    edge: "border-note-sky-edge",
     rotation: "rotate-2",
     pos: "left-40 top-0",
   },
@@ -25,7 +23,6 @@ const heroNotes = [
     type: "Question",
     text: "Who owns the pricing page?",
     color: "bg-note-amber",
-    edge: "border-note-amber-edge",
     rotation: "rotate-6",
     pos: "left-16 top-36",
     dashed: true,
@@ -34,7 +31,6 @@ const heroNotes = [
     type: "Action",
     text: "Maya → draft the launch email",
     color: "bg-note-gold",
-    edge: "border-note-gold-edge",
     rotation: "-rotate-2",
     pos: "left-64 top-44",
   },
@@ -43,12 +39,12 @@ const heroNotes = [
 function HeroNote({ note, index }) {
   return (
     <div
-      className={`absolute w-44 rounded-note border p-3.5 shadow-note ${note.color} ${note.rotation} ${note.pos} ${
+      className={`absolute w-44 rounded-note border-2 border-ink p-3.5 shadow-brutal ${note.color} ${note.rotation} ${note.pos} ${
         note.dashed ? "border-dashed" : ""
-      } ${note.edge} animate-pop-in`}
+      } animate-pop-in`}
       style={{ animationDelay: `${300 + index * 180}ms` }}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-ink/50">
+      <span className="text-[10px] font-bold uppercase tracking-widest text-ink/60">
         {note.type}
       </span>
       <p className="mt-1 text-sm font-medium leading-snug text-ink">{note.text}</p>
