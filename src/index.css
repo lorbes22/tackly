@@ -4,26 +4,27 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Warm paper chrome — hsl triplets consumed by the shadcn/ui components */
+    --background: 40 38% 97%; /* paper #FAF8F4 */
+    --foreground: 43 10% 14%; /* ink #26241F */
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 43 10% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --popover-foreground: 43 10% 14%;
+    --primary: 239 75% 65%; /* periwinkle #6466E9 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 25% 94%;
+    --secondary-foreground: 43 10% 14%;
+    --muted: 40 25% 94%;
+    --muted-foreground: 40 6% 41%; /* ink-soft */
+    --accent: 239 78% 96%; /* periwinkle tint */
+    --accent-foreground: 240 45% 40%;
+    --destructive: 8 55% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 21% 89%; /* line #E8E4DC */
+    --input: 40 21% 89%;
+    --ring: 239 75% 65%;
+    --radius: 0.75rem;
   }
 }
 
@@ -31,7 +32,26 @@
   * {
     @apply border-border;
   }
+  html {
+    @apply scroll-smooth;
+  }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-paper text-ink font-sans antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  ::selection {
+    @apply bg-periwinkle-tint text-periwinkle-deep;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-periwinkle ring-offset-2 ring-offset-paper;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }

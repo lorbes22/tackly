@@ -3,12 +3,45 @@ export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: ['Gabarito', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        note: '0.625rem',
       },
       colors: {
+        // Chrome palette — warm paper canvas, warm ink, one periwinkle accent
+        paper: {
+          DEFAULT: '#FAF8F4',
+          raised: '#FFFFFF',
+          sunken: '#F3F0EA',
+        },
+        ink: {
+          DEFAULT: '#26241F',
+          soft: '#6E6A61',
+          faint: '#A39E93',
+        },
+        periwinkle: {
+          DEFAULT: '#6466E9',
+          deep: '#5052CF',
+          tint: '#EEEEFC',
+        },
+        line: '#E8E4DC',
+        // Node palette — pastel post-it fills, kept separate from chrome.
+        // Color always encodes node type, never sequence.
+        note: {
+          lavender: { DEFAULT: '#E6E1F8', edge: '#B9AEE8' }, // idea
+          mint: { DEFAULT: '#DCEFE3', edge: '#A8D4B8' }, // fact
+          amber: { DEFAULT: '#FCE8C8', edge: '#EBC17F' }, // question
+          sky: { DEFAULT: '#DBEAF9', edge: '#A3C6E8' }, // decision
+          coral: { DEFAULT: '#F7DFDA', edge: '#E0A99F' }, // risk
+          gold: { DEFAULT: '#F9EDAF', edge: '#DDC65A' }, // action
+        },
+        // shadcn/ui semantic mapping (CSS vars set in index.css)
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         primary: {
@@ -34,6 +67,27 @@ export default {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
+      },
+      boxShadow: {
+        // Post-it shadows: soft and close, like paper sitting on paper
+        note: '0 1px 2px rgba(38, 36, 31, 0.08), 0 3px 10px rgba(38, 36, 31, 0.09)',
+        'note-lg': '0 2px 4px rgba(38, 36, 31, 0.08), 0 8px 24px rgba(38, 36, 31, 0.12)',
+        panel: '0 1px 3px rgba(38, 36, 31, 0.06), 0 12px 40px rgba(38, 36, 31, 0.10)',
+      },
+      keyframes: {
+        'pop-in': {
+          '0%': { opacity: '0', transform: 'scale(0.85) rotate(var(--note-rotation, 0deg))' },
+          '70%': { opacity: '1', transform: 'scale(1.03) rotate(var(--note-rotation, 0deg))' },
+          '100%': { opacity: '1', transform: 'scale(1) rotate(var(--note-rotation, 0deg))' },
+        },
+        'fade-up': {
+          '0%': { opacity: '0', transform: 'translateY(8px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        'pop-in': 'pop-in 320ms cubic-bezier(0.34, 1.4, 0.64, 1) both',
+        'fade-up': 'fade-up 400ms ease-out both',
       },
     },
   },
