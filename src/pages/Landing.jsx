@@ -36,7 +36,7 @@ const heroNotes = [
     color: "bg-note-gold",
     edge: "border-note-gold-edge",
     rotation: "-rotate-2",
-    pos: "left-56 top-40",
+    pos: "left-64 top-44",
   },
 ];
 
@@ -118,7 +118,7 @@ export default function Landing() {
             </div>
           </div>
 
-          <div className="relative mx-auto hidden h-72 w-[26rem] lg:block" aria-hidden="true">
+          <div className="relative mx-auto hidden h-80 w-[28rem] lg:block" aria-hidden="true">
             {heroNotes.map((note, i) => (
               <HeroNote key={note.type} note={note} index={i} />
             ))}
