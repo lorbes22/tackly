@@ -1,0 +1,53 @@
+{
+  "name": "Session",
+  "type": "object",
+  "properties": {
+    "owner_user_id": {
+      "type": "string",
+      "description": "User who owns this session"
+    },
+    "org_id": {
+      "type": "string",
+      "description": "Org this session belongs to, if any"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["personal", "meeting"],
+      "default": "personal",
+      "description": "Personal thinking session or multi-speaker meeting"
+    },
+    "title": {
+      "type": "string",
+      "description": "Session title"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["live", "import"],
+      "default": "live",
+      "description": "Live capture or imported transcript"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "processing", "complete"],
+      "default": "active",
+      "description": "Lifecycle status of the session"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When capture started"
+    },
+    "ended_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When capture ended"
+    }
+  },
+  "required": ["type", "title"],
+  "rls": {
+    "create": { "user_condition": { "id": "{{user.id}}" } },
+    "read": { "created_by": "{{user.email}}" },
+    "update": { "created_by": "{{user.email}}" },
+    "delete": { "created_by": "{{user.email}}" }
+  }
+}

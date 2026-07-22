@@ -1,0 +1,32 @@
+{
+  "name": "NodeEdge",
+  "type": "object",
+  "properties": {
+    "from_node_id": {
+      "type": "string",
+      "description": "Source node"
+    },
+    "to_node_id": {
+      "type": "string",
+      "description": "Target node"
+    },
+    "relation": {
+      "type": "string",
+      "enum": ["expands", "answers", "blocks", "relates_to"],
+      "default": "relates_to",
+      "description": "Semantic relation between the two nodes"
+    },
+    "cross_session": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when this edge links nodes from different sessions"
+    }
+  },
+  "required": ["from_node_id", "to_node_id", "relation"],
+  "rls": {
+    "create": { "user_condition": { "id": "{{user.id}}" } },
+    "read": { "created_by": "{{user.email}}" },
+    "update": { "created_by": "{{user.email}}" },
+    "delete": { "created_by": "{{user.email}}" }
+  }
+}

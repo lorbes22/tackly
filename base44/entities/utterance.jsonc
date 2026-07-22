@@ -1,0 +1,38 @@
+{
+  "name": "Utterance",
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Session this utterance belongs to"
+    },
+    "speaker_label": {
+      "type": "string",
+      "description": "Speaker name or label (e.g. 'Speaker 1', 'Me')"
+    },
+    "text": {
+      "type": "string",
+      "description": "Transcribed text of the utterance"
+    },
+    "start_ms": {
+      "type": "integer",
+      "description": "Start offset in milliseconds from session start"
+    },
+    "end_ms": {
+      "type": "integer",
+      "description": "End offset in milliseconds from session start"
+    },
+    "finalized": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether streaming transcription has finalized this utterance"
+    }
+  },
+  "required": ["session_id", "text"],
+  "rls": {
+    "create": { "user_condition": { "id": "{{user.id}}" } },
+    "read": { "created_by": "{{user.email}}" },
+    "update": { "created_by": "{{user.email}}" },
+    "delete": { "created_by": "{{user.email}}" }
+  }
+}

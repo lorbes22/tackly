@@ -1,0 +1,27 @@
+{
+  "name": "Org",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Organization name"
+    },
+    "plan_id": {
+      "type": "string",
+      "description": "Plan this org is subscribed to"
+    },
+    "seats_used": {
+      "type": "integer",
+      "default": 1,
+      "minimum": 0,
+      "description": "Number of seats currently in use"
+    }
+  },
+  "required": ["name"],
+  "rls": {
+    "create": { "user_condition": { "id": "{{user.id}}" } },
+    "read": { "user_condition": { "id": "{{user.id}}" } },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

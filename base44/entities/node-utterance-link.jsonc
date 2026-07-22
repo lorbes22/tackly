@@ -1,0 +1,21 @@
+{
+  "name": "NodeUtteranceLink",
+  "type": "object",
+  "properties": {
+    "node_id": {
+      "type": "string",
+      "description": "Node this link belongs to"
+    },
+    "utterance_id": {
+      "type": "string",
+      "description": "Raw utterance that produced (part of) the node"
+    }
+  },
+  "required": ["node_id", "utterance_id"],
+  "rls": {
+    "create": { "user_condition": { "id": "{{user.id}}" } },
+    "read": { "created_by": "{{user.email}}" },
+    "update": { "created_by": "{{user.email}}" },
+    "delete": { "created_by": "{{user.email}}" }
+  }
+}

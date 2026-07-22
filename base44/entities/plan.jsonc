@@ -1,0 +1,36 @@
+{
+  "name": "Plan",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Plan display name (e.g. Free, Pro, Team)"
+    },
+    "price_monthly": {
+      "type": "number",
+      "default": 0,
+      "minimum": 0,
+      "description": "Monthly price in USD"
+    },
+    "node_limit": {
+      "type": "integer",
+      "description": "Max nodes a user on this plan can create per month (null-ish 0 = unlimited)"
+    },
+    "session_limit": {
+      "type": "integer",
+      "description": "Max sessions per month (0 = unlimited)"
+    },
+    "features": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Feature flags / marketing bullets for this plan"
+    }
+  },
+  "required": ["name"],
+  "rls": {
+    "create": { "user_condition": { "role": "admin" } },
+    "read": true,
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

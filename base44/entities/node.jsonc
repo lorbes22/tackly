@@ -1,0 +1,67 @@
+{
+  "name": "Node",
+  "type": "object",
+  "properties": {
+    "owner_user_id": {
+      "type": "string",
+      "description": "User who owns this node"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Session in which this node was created"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["idea", "fact", "question", "decision", "risk", "action"],
+      "description": "Node taxonomy type — color always encodes type"
+    },
+    "title": {
+      "type": "string",
+      "description": "Short node title shown on the post-it"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Longer summary of the thought"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["open", "resolved", "done", "na"],
+      "default": "na",
+      "description": "Lifecycle: open/resolved for question+risk, open/done for action, na for static types"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Classifier confidence for the placement of this node"
+    },
+    "embedding": {
+      "type": "array",
+      "items": { "type": "number" },
+      "description": "Embedding vector of title + summary for node matching"
+    },
+    "owner_label": {
+      "type": "string",
+      "description": "For action nodes: the owner of the follow-up, if known"
+    },
+    "position_x": {
+      "type": "number",
+      "description": "X position on the board canvas"
+    },
+    "position_y": {
+      "type": "number",
+      "description": "Y position on the board canvas"
+    },
+    "rotation_deg": {
+      "type": "number",
+      "description": "Random post-it rotation in degrees, assigned at creation"
+    }
+  },
+  "required": ["session_id", "type", "title"],
+  "rls": {
+    "create": { "user_condition": { "id": "{{user.id}}" } },
+    "read": { "created_by": "{{user.email}}" },
+    "update": { "created_by": "{{user.email}}" },
+    "delete": { "created_by": "{{user.email}}" }
+  }
+}
