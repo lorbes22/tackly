@@ -41,6 +41,11 @@
       "type": "string",
       "format": "date-time",
       "description": "When capture ended"
+    },
+    "consolidated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the Tier-2 consolidation pass last ran"
     }
   },
   "required": ["type", "title"],

@@ -1,6 +1,7 @@
 // The signature element: node cards styled as neubrutalist post-its —
 // flat pastel fill, hard ink border, offset shadow, slight random rotation.
 // Question and Risk nodes keep a dashed border while open.
+import { forwardRef } from "react";
 
 export const NODE_TYPE_STYLES = {
   idea: { fill: "bg-note-lavender", label: "Idea" },
@@ -17,7 +18,10 @@ const STATUS_LABELS = {
   done: "Done",
 };
 
-export function NodeCard({ node, onClick, animate = false, className = "" }) {
+export const NodeCard = forwardRef(function NodeCard(
+  { node, onClick, animate = false, className = "" },
+  ref
+) {
   const style = NODE_TYPE_STYLES[node.type] || NODE_TYPE_STYLES.idea;
   const isOpen =
     node.status === "open" && (node.type === "question" || node.type === "risk");
@@ -26,6 +30,7 @@ export function NodeCard({ node, onClick, animate = false, className = "" }) {
 
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onClick}
       style={{ "--note-rotation": `${node.rotation_deg || 0}deg` }}
@@ -57,4 +62,4 @@ export function NodeCard({ node, onClick, animate = false, className = "" }) {
       )}
     </button>
   );
-}
+});
