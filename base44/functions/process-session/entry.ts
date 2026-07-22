@@ -87,18 +87,18 @@ Deno.serve(async (req) => {
       BATCH_SIZE,
     );
 
+    // Live sessions (mic/bot still capturing) stay "active" — only the
+    // import/wrap-up flow ("processing") transitions to complete here.
+    const isLive = session.status === "active";
+
     if (pending.length === 0) {
-      if (session.status !== "complete") {
+      if (!isLive && session.status !== "complete") {
         await base44.entities.Session.update(session_id, {
           status: "complete",
           ended_at: new Date().toISOString(),
         });
       }
       return Response.json({ done: true, created: 0, processed: 0 });
-    }
-
-    if (session.status !== "processing") {
-      await base44.entities.Session.update(session_id, { status: "processing" });
     }
 
     const existingNodes = await base44.entities.Node.filter(
@@ -202,7 +202,7 @@ Deno.serve(async (req) => {
       1,
     );
     const done = nextPending.length === 0;
-    if (done) {
+    if (done && !isLive) {
       await base44.entities.Session.update(session_id, {
         status: "complete",
         ended_at: new Date().toISOString(),

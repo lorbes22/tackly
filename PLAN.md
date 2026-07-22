@@ -2,14 +2,13 @@
 
 ## North star
 
-Tackly turns spoken or typed thought — a meeting, a rambling voice note, a solo brainstorm — into a living map of nodes instead of a linear transcript or summary. Two things make it different from adjacent tools:
+Tackly turns spoken or typed thought — a meeting, a rambling voice note, a solo brainstorm — into a living map of nodes instead of a linear transcript or summary. What makes it different from adjacent tools: **dual mode.** The same engine works for team meetings (multi-speaker, imported or live transcript) and personal thinking (hold-a-key-to-talk, solo). It's a thinking tool that also happens to handle meetings, not a meeting tool with a personal mode bolted on.
 
-1. **Cross-session memory.** When you say something that connects to a thought from a previous session (not just earlier in the current one), Tackly recognizes it and expands the existing node instead of creating a duplicate. This is the core differentiator — most competitors are scoped to a single board/session.
-2. **Dual mode.** The same engine works for team meetings (multi-speaker, imported or live transcript) and personal thinking (hold-a-key-to-talk, solo). It's a thinking tool that also happens to handle meetings, not a meeting tool with a personal mode bolted on.
+Scope note: cross-session memory (recognizing when a new thought connects to something from a *previous* session, not just earlier in the current one) was considered and cut for this build — matching happens within a session only. Worth knowing if this gets revisited later, since it was the sharpest differentiator from tools scoped the same way (single board/session) — but not needed to ship something genuinely good now.
 
 Design feel: Apple-level restraint in the chrome, Letterly-level warmth and approachability, nodes styled like physical post-it notes — playful and tactile without tipping into a kids'-app look. Startupy, not clinical.
 
-v1 scope decision (carried over from planning): meeting capture starts with **paste/import transcript**, not a live bot joining calls. Live capture (personal hold-to-talk, and eventually a meeting bot) is real-time from day one since that's core to the product; auto-joining scheduled calls is a v2 stretch goal, not part of the initial build.
+v1 scope decision (updated): meeting capture is live from the start, via Recall (a meeting-bot API) — paste/import transcript remains as a secondary path for meetings already recorded elsewhere, not the only option. Both personal hold-to-talk and meeting-bot capture feed the same real-time utterance pipeline; the pipeline itself doesn't care whether an utterance came from a browser mic or a bot in a call.
 
 ---
 
@@ -17,9 +16,13 @@ v1 scope decision (carried over from planning): meeting capture starts with **pa
 
 - Backend: Base44 backend platform. First step: `npx base44 create` to provision database, auth, functions, storage, realtime.
 - Frontend: web app built on top of the Base44-generated backend, plain routing for two areas — the main app (`/app/...`) and a role-gated admin area (`/admin/...`).
-- AI: Claude API calls from Base44 functions for classification, extraction, and consolidation.
-- Embeddings: for same-session and cross-session node matching (provider TBD during build — whatever Base44's AI integration exposes most easily; fall back to a standalone embeddings API if needed).
-- Speech-to-text: real-time WebSocket transcription for personal hold-to-talk capture from day one. Provider TBD (evaluate what's easiest to wire into a Base44 function first).
+- AI: Base44's built-in LLM handles classification, extraction, and consolidation (Tier 1 and Tier 2) — no separate key needed for this part. Node matching is same-session only and runs directly off the small list of currently-open nodes in the LLM call — no embeddings or vector search needed.
+- Speech-to-text, personal mode: browser mic → streaming STT via AssemblyAI, model `universal-3-5-pro` (realtime), via the official AssemblyAI SDK — not raw WebSocket, since the SDK handles session termination correctly and that's the specific mechanism that causes overcharges if hand-rolled. Decided for transcription quality since it directly feeds the classification pipeline; cost difference vs. the cheaper base streaming model is trivial at this scale and covered by free signup credit either way. See `docs/assemblyai-agent-instructions.md` for the exact integration pattern. Don't let model choice or SDK-vs-raw-WebSocket get re-litigated in Phase 4, just build against it.
+- Speech-to-text + capture, meeting mode: Recall (meeting-bot API). A bot joins the meeting via a pasted call link, and Recall streams real-time transcript events to a webhook endpoint in a Base44 function. Recall's realtime events and AssemblyAI's personal-mode Turn events both resolve to the same shape (speaker, text, finalized) before hitting the Tier-1 classifier — one ingestion function, two sources.
+
+**Secrets needed** (set via `npx base44 secrets set KEY=value`, never pasted in chat):
+- `RECALL_API_KEY` — meeting bot capture
+- `ASSEMBLYAI_API_KEY` — personal hold-to-talk capture
 
 ---
 
@@ -51,17 +54,14 @@ Target latency: under 1 second, so this stays a small model with minimal context
 **Tier 2 (slow path, periodic):**
 Every N utterances or on a timer, a heavier pass:
 - Re-checks placements Tier 1 was unsure about (low confidence)
-- Runs the cross-session embedding search (see below) to catch connections Tier 1's narrow context missed
 - Proposes consolidations/restructures ("these two nodes are really the same idea")
 - Surfaces open questions worth flagging to the user
 
-### Node matching (same-session and cross-session)
+### Node matching (same-session only)
 
-Every node gets an embedding on creation (title + summary). When a new candidate node is identified:
-1. Search embeddings within the current session first (cheap, fast — this is what Tier 1 can realistically do)
-2. Tier 2 additionally searches across the user's *entire* node history, not just the current session
-3. Top-K matches get passed to the LLM to decide: new node, attach to existing, or expand existing with new detail
-4. Below a confidence threshold, don't auto-place — flag it for the user to confirm (mirrors "questions for you" style UX)
+When a new candidate node is identified, it's checked against the small list of currently-open nodes in *this* session — no embeddings or vector search needed, since that list is short enough to pass directly to the LLM as context:
+1. The LLM decides: new node, attach to an existing one, or expand an existing one with new detail
+2. Below a confidence threshold, don't auto-place — flag it for the user to confirm (mirrors "questions for you" style UX)
 
 Every node also keeps a link to the raw utterance(s) that produced it, so a summary that's too compressed can always be expanded back to the original words.
 
@@ -76,11 +76,11 @@ If live Tier-1 placement isn't holding up reliably by demo time, batch-process t
 - **users** — id, email, name, role (user / admin), org_id, plan_id, created_at
 - **orgs** — id, name, plan_id, seats_used
 - **plans** — id, name, price_monthly, node_limit, session_limit, features[]
-- **sessions** — id, owner_user_id, org_id, type (personal / meeting), title, source (live / import), status (active / processing / complete), started_at, ended_at
+- **sessions** — id, owner_user_id, org_id, type (personal / meeting), capture_source (mic_live / bot_live / import), title, meeting_url, bot_id (Recall's bot ID, null unless capture_source is bot_live), status (active / processing / complete), started_at, ended_at
 - **utterances** — id, session_id, speaker_label, text, start_ms, end_ms, finalized
-- **nodes** — id, owner_user_id, session_id, type, title, summary, status (open / resolved / done / n-a), confidence, embedding, created_at, updated_at
+- **nodes** — id, owner_user_id, session_id, type, title, summary, status (open / resolved / done / n-a), confidence, created_at, updated_at
 - **node_utterance_links** — node_id, utterance_id (raw-transcript backlink)
-- **node_edges** — id, from_node_id, to_node_id, relation (expands / answers / blocks / relates_to), cross_session (bool)
+- **node_edges** — id, from_node_id, to_node_id, relation (expands / answers / blocks / relates_to)
 - **usage_events** — id, user_id, org_id, event_type, meta, created_at (feeds admin analytics + plan-limit enforcement)
 
 ---
@@ -95,10 +95,10 @@ If live Tier-1 placement isn't holding up reliably by demo time, batch-process t
 
 ### Main app
 - **Home ("your threads")** — list of past sessions, personal and meeting mixed or filterable, search bar up top
-- **New session** — two entry points: "Start talking" (personal, hold-to-talk) or "Add a meeting" (paste/upload transcript)
+- **New session** — three entry points: "Start talking" (personal, hold-to-talk), "Invite the bot" (paste a Zoom/Meet/Teams link — creates the session and board instantly, Recall bot joins, nodes populate live as the call happens), or "Import a transcript" (paste/upload a transcript from elsewhere)
 - **Board view** — the canvas. Live-updating nodes and connectors during capture; for meeting mode, a collapsible transcript panel alongside (not a fixed permanent column — keep the canvas as the hero, not a dashboard)
-- **Node detail panel** — slides in on click: summary, linked transcript excerpts, related nodes (same-session and cross-session), resolve/done controls for Question/Risk/Action
-- **Search** — semantic search across all of a user's nodes and sessions
+- **Node detail panel** — slides in on click: summary, linked transcript excerpts, related nodes in the same session, resolve/done controls for Question/Risk/Action
+- **Search** — keyword search across a user's past sessions and nodes
 - **Settings** — profile, plan/billing
 
 ### Admin (role-gated, separate route)
@@ -110,32 +110,33 @@ If live Tier-1 placement isn't holding up reliably by demo time, batch-process t
 
 ## 5. Design direction
 
-Following a proper design pass (color/type/layout/signature), not defaulting to generic templates:
+Following a proper design pass (color/type/layout/signature), not defaulting to generic templates. Reference points: Letterly (crisp white, near-monochrome, almost no color outside one dark accent) and Cluely (bold, high-contrast, single loud accent, unapologetic confidence) — both share extreme restraint in the chrome, letting whitespace and typography carry the interface rather than decoration. That's the register the shell should sit in; the post-it nodes remain the one place personality lives.
 
-- **Color** — warm off-white paper canvas as the base (not pure white, not the generic cream-plus-terracotta combo), near-black warm gray for text, a single muted periwinkle/indigo as the sparing brand accent for primary actions — kept separate from the node palette so the pastel nodes stay the visual focus, not competing with UI chrome.
-- **Type** — a rounded, characterful display face for headers and board titles only (used with restraint — this is where the "childish but startupy" personality lives), paired with a clean neutral sans for everything else (body copy, metadata) so the interface stays Apple-restrained rather than twee throughout.
+- **Color** — crisp white base (not a cream/paper canvas), near-black for text, a single bold saturated brand accent (not muted) used sparingly for primary actions and the logo — kept separate from the node palette so the pastel nodes stay the visual focus, not competing with UI chrome.
+- **Type** — a clean, confident sans for headers (restrained personality, closer to Letterly/Grammarly than a rounded playful face), paired with the same or a neutral sibling for body copy and metadata, so the interface reads premium throughout rather than twee.
 - **Layout** — canvas-first. Thin, minimal top bar (icons over labels where possible). The board fills the viewport; transcript and node-detail panels slide in rather than living in a permanent fixed column, so the map itself stays the hero the way the reference tool's dashboard-style layout doesn't.
-- **Signature element** — the nodes themselves, styled like real post-it notes: solid pastel fill (not white cards with a colored border), a few degrees of random rotation per card so they feel placed rather than machine-gridded, soft close shadow, corners rounded like a trimmed sticky note rather than a bubbly pill.
+- **Signature element** — the nodes themselves, styled as Neubrutalist post-it notes: solid pastel fill, a thick black border (not a soft colored outline), a hard-edged solid offset shadow instead of a soft blurred one (the classic Neubrutalist "sticker" look — shadow reads as a flat block of color sitting behind the card, not a glow), bold sans-serif type on the card itself, a few degrees of random rotation per card so they feel placed rather than machine-gridded. High-contrast and graphic against the restrained white/near-black shell — this is the one place color, weight, and playfulness live; everything else stays quiet so the nodes pop even harder.
 - **Motion** — nodes pop in with a small satisfying scale-and-fade when created live; connectors draw themselves in gently. Restrained everywhere else — no decoration that doesn't serve the moment of a thought becoming visible.
+- **Landing page (later phase, noted now so it isn't lost)** — Cluely-level confidence: bold headline, generous whitespace, minimal nav, one strong CTA, and the live node-map animation itself as the hero moment rather than a static screenshot.
 
 This direction is a starting point for whoever builds the UI — worth running through a proper brainstorm/critique pass (per the frontend-design process) before locking exact hex values and fonts, rather than treating the above as final.
 
 ---
 
-## 6. Phased build plan (6 days, today through July 28)
+## 6. Phased build plan (phases — build and review each one before moving to the next, not literal calendar days)
 
-- **Day 1 — Foundation.** `npx base44 create`, auth, full data model above, design tokens scaffolded into the codebase, basic app shell (routing for main app + admin).
-- **Day 2 — Import + classify.** Transcript paste/upload flow, Tier-1 classification function, same-session node matching, board canvas rendering with post-it-style nodes (simple layout algorithm to start).
-- **Day 3 — Linking + detail.** Connector rendering between nodes, node detail panel with linked transcript excerpts, Tier-2 consolidation pass, resolve/done toggling for Question/Risk/Action nodes.
-- **Day 4 — Personal capture + cross-session.** Hold-to-talk browser capture (mic → streaming STT → Tier-1 pipeline, live), cross-session embedding search so nodes can link across a user's whole history, search page.
-- **Day 5 — Admin + billing + polish.** Admin dashboard (users, plans), billing wiring, full design polish pass (post-it aesthetic + motion applied everywhere), landing page.
-- **Day 6 — Demo prep.** Demo video, docs/README, bug bash, submission buffer.
+- **Phase 1 — Foundation.** `npx base44 create`, auth, full data model above, design tokens scaffolded into the codebase, basic app shell (routing for main app + admin).
+- **Phase 2 — Import + classify.** Transcript paste/upload flow, Tier-1 classification function, same-session node matching, board canvas rendering with post-it-style nodes (simple layout algorithm to start).
+- **Phase 3 — Linking + detail.** Connector rendering between nodes, node detail panel with linked transcript excerpts, Tier-2 consolidation pass, resolve/done toggling for Question/Risk/Action nodes.
+- **Phase 4 — Live capture (personal + meeting).** Two capture sources feeding the same real-time pipeline: (1) hold-to-talk browser capture via AssemblyAI, (2) "Invite the bot" flow — Recall bot joins a pasted meeting link, webhook streams utterances into the same Tier-1 pipeline live. Plus the search page (keyword search across a user's own sessions).
+- **Phase 5 — Admin + billing + polish.** Admin dashboard (users, plans), billing wiring, full design polish pass (post-it aesthetic + motion applied everywhere), landing page.
+- **Phase 6 — Demo prep.** Demo video, docs/README, bug bash, submission buffer.
 
 ---
 
 ## 7. Open questions to confirm during build
 
-- Exact STT and embeddings providers — pick whichever wires into a Base44 function with the least friction, confirm on Day 1 before building around it.
-- Plan/pricing tiers aren't decided yet — needed before the billing wiring on Day 5.
+- Plan/pricing tiers aren't decided yet — needed before the billing wiring in Phase 5.
 - Node taxonomy (6 types above) is a first pass — fine to adjust after seeing real sessions mapped.
-- Live meeting-bot capture (auto-joining calls) is explicitly out of scope for this build — don't let it creep in before the core dual-mode experience is solid.
+- Recall's real-time webhook needs a publicly reachable endpoint from a Base44 function, and Recall's webhook payloads should be signature-verified, not trusted blindly — confirm Recall's exact verification method when wiring this up in Phase 4.
+- If live bot capture (Phase 4) turns out less reliable than expected under time pressure, fall back to the existing paste/import path for meetings rather than letting it block the rest of the build — same fallback logic as the personal-capture fallback above.

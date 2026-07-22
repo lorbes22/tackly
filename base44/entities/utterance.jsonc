@@ -31,13 +31,32 @@
       "type": "boolean",
       "default": false,
       "description": "Whether the Tier-1 classification pipeline has consumed this utterance"
+    },
+    "owner_email": {
+      "type": "string",
+      "description": "Session owner's email — set on webhook-ingested utterances so the owner can read them despite service-role creation"
     }
   },
   "required": ["session_id", "text"],
   "rls": {
     "create": true,
-    "read": { "created_by": "{{user.email}}" },
-    "update": { "created_by": "{{user.email}}" },
-    "delete": { "created_by": "{{user.email}}" }
+    "read": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    },
+    "update": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    },
+    "delete": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    }
   }
 }

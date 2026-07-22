@@ -6,6 +6,10 @@
       "type": "string",
       "description": "User who owns this session"
     },
+    "owner_email": {
+      "type": "string",
+      "description": "Owner's email, stored explicitly at creation (created_by is not readable via the API, and the Recall webhook needs it to stamp utterances)"
+    },
     "org_id": {
       "type": "string",
       "description": "Org this session belongs to, if any"
@@ -20,11 +24,23 @@
       "type": "string",
       "description": "Session title"
     },
-    "source": {
+    "capture_source": {
       "type": "string",
-      "enum": ["live", "import"],
-      "default": "live",
-      "description": "Live capture or imported transcript"
+      "enum": ["mic_live", "bot_live", "import"],
+      "default": "import",
+      "description": "How utterances arrive: browser mic, Recall meeting bot, or pasted transcript"
+    },
+    "meeting_url": {
+      "type": "string",
+      "description": "Meeting link the Recall bot was sent to (bot_live only)"
+    },
+    "bot_id": {
+      "type": "string",
+      "description": "Recall bot id (bot_live only)"
+    },
+    "webhook_token": {
+      "type": "string",
+      "description": "Per-session random token used to authenticate Recall webhook posts"
     },
     "status": {
       "type": "string",
