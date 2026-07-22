@@ -59,7 +59,7 @@
   },
   "required": ["session_id", "type", "title"],
   "rls": {
-    "create": { "user_condition": { "id": "{{user.id}}" } },
+    "create": true,
     "read": { "created_by": "{{user.email}}" },
     "update": { "created_by": "{{user.email}}" },
     "delete": { "created_by": "{{user.email}}" }

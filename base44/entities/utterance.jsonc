@@ -26,11 +26,16 @@
       "type": "boolean",
       "default": false,
       "description": "Whether streaming transcription has finalized this utterance"
+    },
+    "processed": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the Tier-1 classification pipeline has consumed this utterance"
     }
   },
   "required": ["session_id", "text"],
   "rls": {
-    "create": { "user_condition": { "id": "{{user.id}}" } },
+    "create": true,
     "read": { "created_by": "{{user.email}}" },
     "update": { "created_by": "{{user.email}}" },
     "delete": { "created_by": "{{user.email}}" }
