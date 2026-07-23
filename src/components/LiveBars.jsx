@@ -8,10 +8,20 @@ import { useHoldToTalk } from "@/lib/useHoldToTalk";
 export function LiveUtteranceFeed({ utterances }) {
   const [exiting, setExiting] = useState(() => new Set());
   const timers = useRef(new Map());
+  // Utterances already processed when this board opened are "already gone" —
+  // they must NOT flash through the feed on entry (that was the transcript
+  // flash bug). Only ones that go unprocessed -> processed while mounted animate.
+  const handled = useRef(null);
+  if (handled.current === null) {
+    handled.current = new Set(
+      utterances.filter((u) => u.processed).map((u) => u.id)
+    );
+  }
 
   useEffect(() => {
     for (const u of utterances) {
-      if (u.processed && !exiting.has(u.id) && !timers.current.has(u.id)) {
+      if (u.processed && !handled.current.has(u.id) && !timers.current.has(u.id)) {
+        handled.current.add(u.id);
         setExiting((prev) => new Set(prev).add(u.id));
         const t = setTimeout(() => {
           timers.current.delete(u.id);
