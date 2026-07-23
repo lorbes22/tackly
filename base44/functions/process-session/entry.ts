@@ -95,17 +95,18 @@ For EACH utterance index, decide exactly one action. First choose the bucket:
 2. ASIDE — has some content or a genuine reaction but is off-topic or personal, no analytical weight ("ha, my coffee's gone cold", "this reminds me of my last job"). Also a meta-remark about the session or the speaker's state ("just trying this out, not sure how it works", "let me think out loud here", "not sure where to start") — keep these as aside nodes; an opening one often becomes the root the whole session flows from. Keep as an "aside"-type node.
 3. ANALYTICAL — real substance: classify into one of the analytical types above.
 
-Then the action:
-- "skip" — bucket 1 only, OR content already fully captured by an existing node
-- "new" — a distinct thought (aside or analytical) worth its own node; give type, a punchy title (max 8 words), a 1-2 sentence summary, and confidence 0-1
-- "attach" — restates or supports an existing node without adding new information; give that node_id
-- "expand" — adds meaningful new detail to an existing node; give node_id and an updated summary that merges the old summary with the new detail
+Then the action. Default strongly to "new" — a granular map of many connected nodes is the goal, NOT a few nodes with fat summaries:
+- "new" — the DEFAULT. Use it for any thought that can stand on its own card, INCLUDING a sub-point, cause, consequence, specific detail, or example ABOUT an existing node. Give type, a punchy title (max 8 words), a 1-2 sentence summary, confidence 0-1, and connect it to the relevant existing node as its parent (see CONNECTING). Example: after a "UGC platform risk" node exists, "we won't have many creators at the start, so brands won't join" is its OWN new node (a supporting risk/detail) connected to that risk — do NOT fold it into the risk's summary.
+- "attach" — ONLY a near-verbatim restatement or bare acknowledgement of an existing node that adds no new information at all; give that node_id. Rare.
+- "expand" — ONLY when the utterance completes the SAME unfinished thought that produced an existing node (a sentence that trailed off across a pause and is now finished), and it isn't worth its own card; give node_id + a merged summary. Rare. If the utterance adds a distinct point rather than finishing the same one, use "new" connected instead.
+- "skip" — bucket 1 (true filler) only.
 
 Rules:
-- Be selective with analytical nodes — a node should be worth pinning to a wall. But an aside with real content is worth keeping as an aside rather than dropped.
-- Prefer "attach"/"expand" over creating a near-duplicate node. node_id must come from the existing nodes list.
+- When unsure between "expand" and a "new" connected node, choose "new" connected. More connected nodes beats fatter summaries.
+- Be selective only in the sense of dropping true filler; genuine sub-points each deserve their own connected node.
+- attach/expand node_id must come from the existing nodes list.
 - For action nodes, put the owner in the title when stated (e.g. "Maya: draft launch email").
-- A single utterance containing several distinct thoughts should still produce only its single strongest node.
+- A single utterance containing several distinct thoughts should still produce only its single strongest node this turn.
 
 CONNECTING NODES — this is the heart of the board. For each new node make a REAL three-way choice about its "parent":
 - CONNECT: set "parent" to the existing node's id (or "new:N" for a node you create earlier this turn) that this thought most directly follows from or relates to, and set "relation". This is the common case — a flowing conversation builds on itself.
