@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
@@ -7,7 +7,15 @@ import { NodeCard } from "@/components/NodeCard";
 import { EdgeLayer } from "@/components/EdgeLayer";
 import { NodeDetailPanel } from "@/components/NodeDetailPanel";
 import { MicBar, BotBar } from "@/components/LiveBars";
-import { ArrowLeft, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { usePanZoom } from "@/lib/usePanZoom";
+import {
+  ArrowLeft,
+  Maximize2,
+  PanelRightClose,
+  PanelRightOpen,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 
 const Session = base44.entities.Session;
 const Node = base44.entities.Node;
@@ -41,7 +49,38 @@ export default function Board() {
   const lastSeqRef = useRef(0);
   const processingRef = useRef(false);
   const cardRefs = useRef(new Map());
-  const scrollRef = useRef(null);
+  const viewportRef = useRef(null);
+
+  // Content bounding box (world space) from node positions + measured sizes.
+  // Drives pan/zoom bounds and fit-to-content.
+  const contentBounds = useMemo(() => {
+    if (nodes.length === 0) {
+      return { minX: 900, minY: 560, maxX: 1300, maxY: 900 };
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+      const x = n.position_x ?? 80;
+      const y = n.position_y ?? 80;
+      const size = sizes[n.id] || { w: 224, h: 120 };
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + size.w);
+      maxY = Math.max(maxY, y + size.h);
+    }
+    return { minX, minY, maxX, maxY };
+  }, [nodes, sizes]);
+
+  const { transform, handlers: panHandlers, zoomBy, fitToContent, panToWorld } =
+    usePanZoom({ viewportRef, contentBounds });
+
+  // Frame the content once, the first time nodes appear
+  const didFitRef = useRef(false);
+  useEffect(() => {
+    if (!didFitRef.current && nodes.length > 0 && viewportRef.current) {
+      didFitRef.current = true;
+      fitToContent();
+    }
+  }, [nodes.length, fitToContent]);
 
   // ---- Ops application: the ONLY way board state changes after initial
   // load. Each op merges into existing state — never a wholesale replace
@@ -417,18 +456,17 @@ export default function Board() {
     };
   }, [session, sessionId, refreshSession]);
 
-  const selectNode = useCallback((id) => {
-    setSelectedId(id);
-    const el = cardRefs.current.get(id);
-    if (el && scrollRef.current) {
-      const node = el.parentElement;
-      scrollRef.current.scrollTo({
-        left: Math.max(0, node.offsetLeft - 220),
-        top: Math.max(0, node.offsetTop - 160),
-        behavior: "smooth",
-      });
-    }
-  }, []);
+  const selectNode = useCallback(
+    (id) => {
+      setSelectedId(id);
+      const node = nodes.find((n) => n.id === id);
+      if (node) {
+        const size = sizes[id] || { w: 224, h: 120 };
+        panToWorld((node.position_x ?? 80) + size.w / 2, (node.position_y ?? 80) + size.h / 2);
+      }
+    },
+    [nodes, sizes, panToWorld]
+  );
 
   // User-initiated ops: apply locally now, append to the log so it stays a
   // complete record and other viewers get the change via realtime.
@@ -557,14 +595,27 @@ export default function Board() {
 
       <div className="relative flex-1 overflow-hidden">
         <div
-          ref={scrollRef}
-          className="h-full overflow-auto"
+          ref={viewportRef}
+          data-pan-surface
+          onPointerDown={panHandlers.onPointerDown}
+          onPointerMove={panHandlers.onPointerMove}
+          onPointerUp={panHandlers.onPointerUp}
+          onPointerLeave={panHandlers.onPointerLeave}
+          className="h-full cursor-grab overflow-hidden active:cursor-grabbing"
           style={{
             backgroundImage: "radial-gradient(circle, #E8E4DC 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
+            backgroundSize: `${24 * transform.scale}px ${24 * transform.scale}px`,
+            backgroundPosition: `${transform.x}px ${transform.y}px`,
           }}
         >
-          <div className="relative" style={{ width: CANVAS_W, height: CANVAS_H }}>
+          <div
+            className="absolute left-0 top-0 origin-top-left"
+            style={{
+              transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+              width: CANVAS_W,
+              height: CANVAS_H,
+            }}
+          >
             <EdgeLayer
               edges={edges}
               nodes={nodes}
@@ -582,6 +633,7 @@ export default function Board() {
             {nodes.map((node) => (
               <div
                 key={node.id}
+                data-node
                 className="absolute"
                 style={{ left: node.position_x ?? 80, top: node.position_y ?? 80 }}
               >
@@ -601,16 +653,43 @@ export default function Board() {
                 />
               </div>
             ))}
+          </div>
 
-            {nodes.length === 0 && !phase && session?.status === "complete" && (
-              <div className="absolute left-1/3 top-1/4 max-w-xs -translate-x-1/2 text-center">
+          {nodes.length === 0 && !phase && session?.status === "complete" && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="max-w-xs text-center">
                 <p className="font-medium text-ink">Nothing mapped yet</p>
                 <p className="mt-1 text-sm text-ink-soft">
                   This transcript didn't produce any nodes — it may be too short
                   or all small talk.
                 </p>
               </div>
-            )}
+            </div>
+          )}
+
+          {/* Zoom controls */}
+          <div className="absolute bottom-5 left-5 z-10 flex flex-col gap-1.5">
+            <button
+              onClick={() => zoomBy(1.2)}
+              title="Zoom in"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-ink bg-paper-raised text-ink shadow-brutal-sm transition-transform hover:-translate-y-px"
+            >
+              <ZoomIn className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => zoomBy(1 / 1.2)}
+              title="Zoom out"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-ink bg-paper-raised text-ink shadow-brutal-sm transition-transform hover:-translate-y-px"
+            >
+              <ZoomOut className="h-4 w-4" />
+            </button>
+            <button
+              onClick={fitToContent}
+              title="Fit to content"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-ink bg-paper-raised text-ink shadow-brutal-sm transition-transform hover:-translate-y-px"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </button>
           </div>
         </div>
 

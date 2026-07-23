@@ -11,16 +11,40 @@ const NODE_TYPES = ["idea", "fact", "opinion", "question", "decision", "risk", "
 const OPEN_STATUS_TYPES = new Set(["question", "risk", "action"]);
 const RELATIONS = ["expands", "answers", "blocks", "relates_to"];
 
-// Loose grid with jitter so notes feel placed, not machine-gridded
-function placeNode(index: number) {
-  const col = index % 4;
-  const row = Math.floor(index / 4);
-  const jitter = () => Math.random() * 44 - 22;
-  return {
-    position_x: 80 + col * 280 + jitter(),
-    position_y: 80 + row * 230 + jitter(),
-    rotation_deg: Math.round((Math.random() * 5 - 2.5) * 10) / 10,
-  };
+// Layout rule (PLAN.md): first node centers; unrelated nodes extend rightward
+// from the current rightmost node; a node connected to an existing node stacks
+// ABOVE it instead of continuing the horizontal line.
+const CENTER_X = 1088;
+const CENTER_Y = 740;
+const H_GAP = 300; // horizontal step for unrelated nodes
+const V_GAP = 172; // vertical step when stacking above an anchor
+const COL_TOL = 130; // x-distance treated as "same column"
+
+type Placed = { id: string; x: number; y: number };
+
+function placeNode(placed: Placed[], anchorId: string | null) {
+  const jitter = () => Math.random() * 24 - 12;
+  const rotation_deg = Math.round((Math.random() * 5 - 2.5) * 10) / 10;
+
+  if (placed.length === 0) {
+    return { position_x: CENTER_X, position_y: CENTER_Y, rotation_deg };
+  }
+  if (anchorId) {
+    const anchor = placed.find((p) => p.id === anchorId);
+    if (anchor) {
+      // Stack above the topmost card already in the anchor's column
+      const column = placed.filter((p) => Math.abs(p.x - anchor.x) < COL_TOL);
+      const topY = Math.min(...column.map((p) => p.y));
+      return {
+        position_x: anchor.x + jitter(),
+        position_y: topY - V_GAP,
+        rotation_deg,
+      };
+    }
+  }
+  // Unrelated → to the right of the current rightmost node, on the baseline row
+  const maxX = Math.max(...placed.map((p) => p.x));
+  return { position_x: maxX + H_GAP + jitter(), position_y: CENTER_Y, rotation_deg };
 }
 
 function buildPrompt(
@@ -195,11 +219,48 @@ Deno.serve(async (req) => {
     // Map decision index -> created node id, so edges can reference "new:N"
     const newNodeByIndex = new Map<number, string>();
 
+    // Running layout state: every visible node's position, plus new ones as
+    // they're created this turn. Drives the center/rightward/stack-above rule.
+    const placed: Placed[] = visibleNodes
+      .filter((n) => typeof n.position_x === "number")
+      .map((n) => ({ id: n.id, x: n.position_x, y: n.position_y ?? CENTER_Y }));
+
+    // Resolve an edge endpoint ref to a node id that's already placed
+    const resolvePlaced = (ref: unknown): string | null => {
+      if (typeof ref !== "string") return null;
+      const asNew = ref.startsWith("new:")
+        ? newNodeByIndex.get(Number(ref.slice(4)))
+        : newNodeByIndex.get(Number(ref));
+      if (asNew && placed.some((p) => p.id === asNew)) return asNew;
+      return placed.some((p) => p.id === ref) ? ref : null;
+    };
+    // For a new node at decision index idx, find an existing/earlier node it
+    // connects to (its anchor) so it can stack above rather than float right.
+    // Only STRUCTURAL relations anchor placement — a loose "relates_to" still
+    // draws a connector but lets a new topic spread rightward.
+    const STACK_RELATIONS = new Set(["expands", "answers", "blocks"]);
+    const anchorForIndex = (idx: number): string | null => {
+      const isThis = (r: unknown) => r === `new:${idx}` || r === String(idx);
+      for (const e of result?.edges ?? []) {
+        if (!STACK_RELATIONS.has(e.relation)) continue;
+        if (isThis(e.from)) {
+          const a = resolvePlaced(e.to);
+          if (a) return a;
+        }
+        if (isThis(e.to)) {
+          const a = resolvePlaced(e.from);
+          if (a) return a;
+        }
+      }
+      return null;
+    };
+
     for (const d of result?.decisions ?? []) {
       const utt = pending[d.index];
       if (!utt || d.action === "skip") continue;
 
       if (d.action === "new" && d.type && NODE_TYPES.includes(d.type) && d.title) {
+        const placement = placeNode(placed, anchorForIndex(d.index));
         const node = await base44.entities.Node.create({
           owner_user_id: user.id,
           session_id,
@@ -208,9 +269,14 @@ Deno.serve(async (req) => {
           summary: (d.summary || "").slice(0, 600),
           status: OPEN_STATUS_TYPES.has(d.type) ? "open" : "na",
           confidence: typeof d.confidence === "number" ? d.confidence : undefined,
-          ...placeNode(existingNodes.length + created),
+          ...placement,
         });
         newNodeByIndex.set(d.index, node.id);
+        placed.push({
+          id: node.id,
+          x: placement.position_x,
+          y: placement.position_y,
+        });
         created++;
         // Push the op the moment the node exists — no waiting for the batch
         await appendOp("create_node", { node });
