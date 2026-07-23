@@ -8,6 +8,7 @@ import { EdgeLayer } from "@/components/EdgeLayer";
 import { NodeDetailPanel } from "@/components/NodeDetailPanel";
 import { MicBar, BotBar, LiveUtteranceFeed } from "@/components/LiveBars";
 import { usePanZoom } from "@/lib/usePanZoom";
+import { computeLayout } from "@/lib/treeLayout";
 import { boardToSvg, exportPng, exportSvg } from "@/lib/boardExport";
 import {
   ArrowLeft,
@@ -59,27 +60,43 @@ export default function Board() {
   const cardRefs = useRef(new Map());
   const viewportRef = useRef(null);
 
-  // Content bounding box (world space) from node positions + measured sizes.
-  // Drives pan/zoom bounds and fit-to-content.
+  // Auto-layout (d3-hierarchy, left-to-right, multi-root) from parent_id, with
+  // manual drag overrides. dragPos holds the node currently being dragged so
+  // its position (and its connectors) update live before it's persisted.
+  const [dragPos, setDragPos] = useState(null); // { id, x, y } | null
+  const layoutPositions = useMemo(() => computeLayout(nodes), [nodes]);
+  const positions = useMemo(
+    () =>
+      dragPos ? { ...layoutPositions, [dragPos.id]: { x: dragPos.x, y: dragPos.y } } : layoutPositions,
+    [layoutPositions, dragPos]
+  );
+
+  // Content bounding box (world space) from computed positions + card sizes.
   const contentBounds = useMemo(() => {
-    if (nodes.length === 0) {
-      return { minX: 900, minY: 560, maxX: 1300, maxY: 900 };
-    }
+    const ids = Object.keys(positions);
+    if (ids.length === 0) return { minX: 0, minY: 0, maxX: 400, maxY: 300 };
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const n of nodes) {
-      const x = n.position_x ?? 80;
-      const y = n.position_y ?? 80;
-      const size = sizes[n.id] || { w: 224, h: 120 };
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x + size.w);
-      maxY = Math.max(maxY, y + size.h);
+    for (const id of ids) {
+      const p = positions[id];
+      const size = sizes[id] || { w: 224, h: 120 };
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x + size.w);
+      maxY = Math.max(maxY, p.y + size.h);
     }
     return { minX, minY, maxX, maxY };
-  }, [nodes, sizes]);
+  }, [positions, sizes]);
 
   const { transform, handlers: panHandlers, zoomBy, fitToContent, panToWorld } =
     usePanZoom({ viewportRef, contentBounds });
+
+  // Mirror transform + drag position into refs for the drag handlers
+  const transformRef = useRef(transform);
+  transformRef.current = transform;
+  const dragPosRef = useRef(null);
+  dragPosRef.current = dragPos;
+  const dragRef = useRef(null);
+  const draggedRef = useRef(false);
 
   // Frame the content once, the first time nodes appear
   const didFitRef = useRef(false);
@@ -475,13 +492,59 @@ export default function Board() {
   const selectNode = useCallback(
     (id) => {
       setSelectedId(id);
-      const node = nodes.find((n) => n.id === id);
-      if (node) {
+      const p = positions[id];
+      if (p) {
         const size = sizes[id] || { w: 224, h: 120 };
-        panToWorld((node.position_x ?? 80) + size.w / 2, (node.position_y ?? 80) + size.h / 2);
+        panToWorld(p.x + size.w / 2, p.y + size.h / 2);
       }
     },
-    [nodes, sizes, panToWorld]
+    [positions, sizes, panToWorld]
+  );
+
+  // Node dragging: move a node, persist pos_x/pos_y, connectors recalc live.
+  const onNodeDragMove = useCallback((e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const scale = transformRef.current.scale || 1;
+    if (Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) > 4) {
+      draggedRef.current = true;
+    }
+    setDragPos({
+      id: d.id,
+      x: d.ox + (e.clientX - d.sx) / scale,
+      y: d.oy + (e.clientY - d.sy) / scale,
+    });
+  }, []);
+
+  const onNodeDragEnd = useCallback(() => {
+    window.removeEventListener("pointermove", onNodeDragMove);
+    window.removeEventListener("pointerup", onNodeDragEnd);
+    const d = dragRef.current;
+    dragRef.current = null;
+    const finalPos = dragPosRef.current;
+    if (d && draggedRef.current && finalPos) {
+      const pos_x = finalPos.x;
+      const pos_y = finalPos.y;
+      setNodes((prev) =>
+        prev.map((n) => (n.id === d.id ? { ...n, pos_x, pos_y } : n))
+      );
+      Node.update(d.id, { pos_x, pos_y }).catch(() => {});
+    }
+    setDragPos(null);
+  }, [onNodeDragMove]);
+
+  const startNodeDrag = useCallback(
+    (e, id) => {
+      if (e.button != null && e.button !== 0) return;
+      e.stopPropagation();
+      const p = positions[id];
+      if (!p) return;
+      draggedRef.current = false;
+      dragRef.current = { id, sx: e.clientX, sy: e.clientY, ox: p.x, oy: p.y };
+      window.addEventListener("pointermove", onNodeDragMove);
+      window.addEventListener("pointerup", onNodeDragEnd);
+    },
+    [positions, onNodeDragMove, onNodeDragEnd]
   );
 
   // User-initiated ops: apply locally now, append to the log so it stays a
@@ -549,7 +612,7 @@ export default function Board() {
   const runExport = useCallback(
     async (format) => {
       setExportOpen(false);
-      const svg = boardToSvg(nodes, edges, sizes);
+      const svg = boardToSvg(nodes, edges, sizes, positions);
       if (!svg) return;
       const base = (session?.title || "tackly-board")
         .toLowerCase()
@@ -559,7 +622,7 @@ export default function Board() {
       if (format === "svg") exportSvg(svg, `${base}.svg`);
       else await exportPng(svg, `${base}.png`);
     },
-    [nodes, edges, sizes, session]
+    [nodes, edges, sizes, positions, session]
   );
 
   if (notFound) {
@@ -684,7 +747,7 @@ export default function Board() {
           >
             <EdgeLayer
               edges={edges}
-              nodes={nodes}
+              positions={positions}
               sizes={sizes}
               animateIds={
                 initialEdgeIds.current
@@ -696,29 +759,40 @@ export default function Board() {
               width={CANVAS_W}
               height={CANVAS_H}
             />
-            {nodes.map((node) => (
-              <div
-                key={node.id}
-                data-node
-                className="absolute"
-                style={{ left: node.position_x ?? 80, top: node.position_y ?? 80 }}
-              >
-                <NodeCard
-                  ref={(el) => {
-                    if (el) cardRefs.current.set(node.id, el);
-                    else cardRefs.current.delete(node.id);
-                  }}
-                  node={node}
-                  noteCount={noteCounts[node.id] || 0}
-                  animate={initialNodeIds.current && !initialNodeIds.current.has(node.id)}
-                  className={selectedId === node.id ? "shadow-brutal-lg ring-2 ring-periwinkle" : ""}
-                  onClick={() => {
-                    setShowTranscript(false);
-                    setSelectedId((cur) => (cur === node.id ? null : node.id));
-                  }}
-                />
-              </div>
-            ))}
+            {nodes.map((node) => {
+              const p = positions[node.id] || { x: 80, y: 80 };
+              return (
+                <div
+                  key={node.id}
+                  data-node
+                  onPointerDown={(e) => startNodeDrag(e, node.id)}
+                  className={`absolute touch-none ${
+                    dragPos?.id === node.id ? "cursor-grabbing" : "cursor-grab"
+                  }`}
+                  style={{ left: p.x, top: p.y }}
+                >
+                  <NodeCard
+                    ref={(el) => {
+                      if (el) cardRefs.current.set(node.id, el);
+                      else cardRefs.current.delete(node.id);
+                    }}
+                    node={node}
+                    noteCount={noteCounts[node.id] || 0}
+                    animate={initialNodeIds.current && !initialNodeIds.current.has(node.id)}
+                    className={selectedId === node.id ? "shadow-brutal-lg ring-2 ring-periwinkle" : ""}
+                    onClick={() => {
+                      // Suppress the click that follows a drag
+                      if (draggedRef.current) {
+                        draggedRef.current = false;
+                        return;
+                      }
+                      setShowTranscript(false);
+                      setSelectedId((cur) => (cur === node.id ? null : node.id));
+                    }}
+                  />
+                </div>
+              );
+            })}
           </div>
 
           {nodes.length === 0 && !phase && session?.status === "complete" && (

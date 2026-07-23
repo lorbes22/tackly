@@ -12,7 +12,15 @@
     },
     "parent_id": {
       "type": "string",
-      "description": "The node this one flows from (its single connector parent). Null for the session's root node. Drives the connected-flow tree layout."
+      "description": "The node this one flows from (its single connector parent). Null for a root/independent branch. Drives the d3-hierarchy tree layout."
+    },
+    "pos_x": {
+      "type": "number",
+      "description": "Manual drag-override X (world space). Null = use the auto tree layout."
+    },
+    "pos_y": {
+      "type": "number",
+      "description": "Manual drag-override Y (world space). Null = use the auto tree layout."
     },
     "type": {
       "type": "string",

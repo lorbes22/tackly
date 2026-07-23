@@ -58,14 +58,16 @@ function wrap(text, maxChars, maxLines) {
   return lines;
 }
 
-export function boardToSvg(nodes, edges, sizes = {}) {
+export function boardToSvg(nodes, edges, sizes = {}, positions = {}) {
   if (nodes.length === 0) return null;
   const sz = (id) => sizes[id] || { w: CARD_W, h: CARD_H };
+  const px = (n) => positions[n.id]?.x ?? n.position_x ?? 80;
+  const py = (n) => positions[n.id]?.y ?? n.position_y ?? 80;
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const n of nodes) {
-    const x = n.position_x ?? 80;
-    const y = n.position_y ?? 80;
+    const x = px(n);
+    const y = py(n);
     const s = sz(n.id);
     minX = Math.min(minX, x);
     minY = Math.min(minY, y);
@@ -80,7 +82,7 @@ export function boardToSvg(nodes, edges, sizes = {}) {
   const centers = new Map(
     nodes.map((n) => {
       const s = sz(n.id);
-      return [n.id, { x: (n.position_x ?? 80) + s.w / 2, y: (n.position_y ?? 80) + s.h / 2 }];
+      return [n.id, { x: px(n) + s.w / 2, y: py(n) + s.h / 2 }];
     })
   );
 
@@ -108,8 +110,8 @@ export function boardToSvg(nodes, edges, sizes = {}) {
   const nodeSvg = nodes
     .map((n) => {
       const s = sz(n.id);
-      const x = n.position_x ?? 80;
-      const y = n.position_y ?? 80;
+      const x = px(n);
+      const y = py(n);
       const rot = n.rotation_deg || 0;
       const fill = TYPE_HEX[n.type] || TYPE_HEX.idea;
       const dashed =
