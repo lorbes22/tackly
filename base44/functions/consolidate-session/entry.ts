@@ -33,8 +33,10 @@ function buildUserPrompt(
   nodes: { id: string; type: string; title: string; summary: string; status: string }[],
   existingEdges: { from_node_id: string; to_node_id: string }[],
 ) {
-  const maxEdges = Math.max(3, Math.round(nodes.length * 1.2));
-  return `Propose at most ${maxEdges} edges.
+  // Keep cross-links sparse — the parent tree already carries the main
+  // structure, so Tier-2 should add only a few high-signal extra connections.
+  const maxEdges = Math.max(2, Math.round(nodes.length * 0.4));
+  return `Propose at most ${maxEdges} cross-link edges — only genuinely high-signal connections the parent tree doesn't already imply. Fewer, stronger links are better than many weak ones.
 
 Nodes:
 ${JSON.stringify(nodes, null, 1)}

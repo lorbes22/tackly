@@ -72,6 +72,15 @@ export default function Board() {
     [layoutPositions, dragPos]
   );
 
+  // Tree edges (a node -> its parent) render solid; everything else (Tier-2
+  // cross-links) renders faint + dashed so the primary flow isn't a tangle.
+  const treeEdgeIds = useMemo(() => {
+    const parentOf = new Map(nodes.map((n) => [n.id, n.parent_id]));
+    return new Set(
+      edges.filter((e) => parentOf.get(e.to_node_id) === e.from_node_id).map((e) => e.id)
+    );
+  }, [edges, nodes]);
+
   // Content bounding box (world space) from computed positions + card sizes.
   const contentBounds = useMemo(() => {
     const ids = Object.keys(positions);
@@ -831,6 +840,7 @@ export default function Board() {
               edges={edges}
               positions={positions}
               sizes={sizes}
+              treeEdgeIds={treeEdgeIds}
               animateIds={
                 initialEdgeIds.current
                   ? new Set(
