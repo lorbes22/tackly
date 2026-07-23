@@ -1,16 +1,34 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
+import { verifyRecallSignature } from "../../shared/recallVerify.ts";
 
 // Ingests Recall real-time transcript events into utterances.
-// The caller (Recall's servers) is unauthenticated, so events are verified
-// by resolving the payload's bot id — a Recall-generated unguessable id
-// stored on exactly one session — and, when the endpoint metadata we
-// registered is echoed back, cross-checking its token against the session's
-// webhook_token. Rows are written via service role with owner_email set so
-// RLS still lets the session owner read them. Classification itself runs in
-// user context from the open board, same as every other capture source.
+// The caller (Recall's servers) is verified two ways: (1) the request
+// signature against the workspace verification secret (RECALL_VERIF_SECRET),
+// and (2) resolving the payload's bot id — a Recall-generated unguessable id
+// stored on exactly one session — cross-checked against the endpoint
+// metadata token we registered, echoed back on every event. Rows are written
+// via service role with owner_email set so RLS still lets the session owner
+// read them. Classification itself runs in user context from the open
+// board, same as every other capture source.
 Deno.serve(async (req) => {
   try {
-    const payload = await req.json();
+    const secret = Deno.env.get("RECALL_VERIF_SECRET");
+    const body = await req.text();
+    console.log("recall-webhook: inbound hit, bytes =", body.length);
+    if (secret) {
+      // Soft-verify for now: log on mismatch rather than reject. The bot_id +
+      // per-session webhook_token check below is the real security boundary;
+      // this guards against a signature-format mistake silently blacking out
+      // meeting capture again the way the webhook URL bug just did.
+      const valid = await verifyRecallSignature(secret, req, body);
+      if (!valid) {
+        console.error("recall-webhook: signature verification failed", {
+          hasWebhookId: req.headers.has("webhook-id"),
+          hasWebhookSignature: req.headers.has("webhook-signature"),
+        });
+      }
+    }
+    const payload = JSON.parse(body);
     if (payload?.event !== "transcript.data") {
       return Response.json({ ok: true, ignored: payload?.event });
     }

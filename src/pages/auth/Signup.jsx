@@ -53,6 +53,7 @@ export default function Signup() {
           email={email}
           onVerified={async () => {
             await base44.auth.loginViaEmailPassword(email, password);
+            base44.functions.invoke("send-templated-email", {}).catch(() => {});
             await refresh();
             navigate("/app", { replace: true });
           }}

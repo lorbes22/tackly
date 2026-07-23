@@ -16,6 +16,7 @@ import AdminLayout from "@/layouts/AdminLayout";
 import Overview from "@/pages/admin/Overview";
 import UsersPage from "@/pages/admin/UsersPage";
 import PlansPage from "@/pages/admin/PlansPage";
+import EmailsPage from "@/pages/admin/EmailsPage";
 
 export default function App() {
   return (
@@ -63,6 +64,7 @@ export default function App() {
             <Route index element={<Overview />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="plans" element={<PlansPage />} />
+            <Route path="emails" element={<EmailsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
