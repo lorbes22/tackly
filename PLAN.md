@@ -67,6 +67,15 @@ When a new candidate node is identified, it's checked against the small list of 
 
 Every node also keeps a link to the raw utterance(s) that produced it, so a summary that's too compressed can always be expanded back to the original words.
 
+### Realtime delivery — ops log, not full-state updates
+
+This is the mechanism that makes the board feel alive as you speak, and it's not optional polish — get this wrong and nodes will appear to vanish or the whole board will feel like it's re-rendering on every utterance instead of growing.
+
+- The moment Tier 1 finishes classifying **one single utterance**, it produces zero or more small discrete operations: `create_node`, `attach_node` (expand an existing node with new detail/link a new utterance to it), `create_edge`, `update_status`.
+- Each op gets appended to an ops log for that session with an incrementing sequence number, and pushed to the frontend via Base44 realtime **the instant it's created** — never batched, never waiting for more utterances to accumulate first.
+- The frontend applies each incoming op directly to its existing in-memory board state — add one node, draw one edge — it **never re-fetches or regenerates the whole board** in reaction to new speech. A full board render only happens once, on initial page load (replay the session's ops in order).
+- Store this as its own append-only collection (see `session_ops` in the data model below), separate from the `nodes`/`node_edges` tables those ops describe — the log is the source of truth for "what happened and in what order," the tables are the current derived state.
+
 ### Fallback
 
 If live Tier-1 placement isn't holding up reliably by demo time, batch-process the full transcript after the session ends instead. Same pipeline, just not streaming — this should be the safety net, not a separate system.
@@ -83,6 +92,7 @@ If live Tier-1 placement isn't holding up reliably by demo time, batch-process t
 - **nodes** — id, owner_user_id, session_id, type, title, summary, status (open / resolved / done / n-a), confidence, created_at, updated_at
 - **node_utterance_links** — node_id, utterance_id (raw-transcript backlink)
 - **node_edges** — id, from_node_id, to_node_id, relation (expands / answers / blocks / relates_to)
+- **session_ops** — id, session_id, seq (incrementing per session), op_type (create_node / attach_node / create_edge / update_status), payload (JSON), created_at — the append-only realtime log described above; this is what the frontend subscribes to, not the nodes table directly
 - **usage_events** — id, user_id, org_id, event_type, meta, created_at (feeds admin analytics + plan-limit enforcement)
 
 ---
@@ -141,4 +151,5 @@ This direction is a starting point for whoever builds the UI — worth running t
 - Plan/pricing tiers aren't decided yet — needed before the billing wiring in Phase 5.
 - Node taxonomy (6 types above) is a first pass — fine to adjust after seeing real sessions mapped.
 - Recall's real-time webhook needs a publicly reachable endpoint from a Base44 function, and Recall's webhook payloads should be signature-verified, not trusted blindly — confirm Recall's exact verification method when wiring this up in Phase 4.
+- Known bug as of the current build: nodes disappear whenever a new push-to-talk utterance is added (the transcript tab correctly keeps everything, only the node board loses prior nodes). This is almost certainly the symptom of a full-state overwrite happening somewhere — either the backend regenerating/upserting the whole node set per utterance instead of only adding what's new, or the frontend replacing its board state wholesale on each update instead of merging. Fixing the realtime delivery to match the ops-log pattern above should resolve this as a side effect, but verify directly: after the fix, push-to-talk twice in one session and confirm the first utterance's node(s) are still on the board after the second.
 - If live bot capture (Phase 4) turns out less reliable than expected under time pressure, fall back to the existing paste/import path for meetings rather than letting it block the rest of the build — same fallback logic as the personal-capture fallback above.

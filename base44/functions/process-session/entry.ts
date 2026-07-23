@@ -1,9 +1,12 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
 
-// Tier-1 classification: consumes one batch of unprocessed utterances per call.
-// The frontend keeps invoking until { done: true }, so each call stays fast and
-// the board fills in incrementally.
-const BATCH_SIZE = 12;
+// Tier-1 classification. Emits a discrete SessionOp (create_node /
+// attach_node) the instant each decision is applied — the ops log is what
+// the frontend subscribes to; it never re-fetches the board (PLAN.md
+// "Realtime delivery"). Live sessions classify ONE utterance per call so
+// ops stream per-utterance with no batching; imports batch utterances into
+// one LLM call for throughput but still emit ops per decision.
+const IMPORT_BATCH_SIZE = 12;
 const NODE_TYPES = ["idea", "fact", "question", "decision", "risk", "action"];
 const OPEN_STATUS_TYPES = new Set(["question", "risk", "action"]);
 
@@ -81,15 +84,16 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const pending = await base44.entities.Utterance.filter(
-      { session_id, processed: false },
-      "start_ms",
-      BATCH_SIZE,
-    );
-
     // Live sessions (mic/bot still capturing) stay "active" — only the
     // import/wrap-up flow ("processing") transitions to complete here.
     const isLive = session.status === "active";
+    const batchSize = isLive ? 1 : IMPORT_BATCH_SIZE;
+
+    const pending = await base44.entities.Utterance.filter(
+      { session_id, processed: false },
+      "start_ms",
+      batchSize,
+    );
 
     if (pending.length === 0) {
       if (!isLive && session.status !== "complete") {
@@ -112,6 +116,22 @@ Deno.serve(async (req) => {
       title: n.title,
       summary: (n.summary || "").slice(0, 160),
     }));
+
+    // Ops are appended with an incrementing per-session sequence number
+    const lastOps = await base44.entities.SessionOp.filter(
+      { session_id },
+      "-seq",
+      1,
+    );
+    let seq = lastOps[0]?.seq ?? 0;
+    const appendOp = (op_type: string, payload: Record<string, unknown>) =>
+      base44.entities.SessionOp.create({
+        session_id,
+        seq: ++seq,
+        op_type,
+        payload,
+        owner_email: session.owner_email || undefined,
+      });
 
     const result = await base44.integrations.Core.InvokeLLM({
       prompt: buildPrompt(session.type, openList, pending),
@@ -162,6 +182,8 @@ Deno.serve(async (req) => {
           ...placeNode(existingNodes.length + created),
         });
         created++;
+        // Push the op the moment the node exists — no waiting for the batch
+        await appendOp("create_node", { node });
         links.push({ node_id: node.id, utterance_id: utt.id });
         events.push({
           user_id: user.id,
@@ -176,6 +198,12 @@ Deno.serve(async (req) => {
             summary: d.summary.slice(0, 600),
           });
         }
+        await appendOp("attach_node", {
+          node_id: target.id,
+          utterance_id: utt.id,
+          action: d.action,
+          summary: d.action === "expand" ? d.summary?.slice(0, 600) : undefined,
+        });
         links.push({ node_id: target.id, utterance_id: utt.id });
         events.push({
           user_id: user.id,

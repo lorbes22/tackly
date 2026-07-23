@@ -69,6 +69,18 @@ Deno.serve(async (req) => {
       (e) => nodeIds.has(e.from_node_id) && nodeIds.has(e.to_node_id),
     );
 
+    // Consolidation results stream to the board as ops too
+    const lastOps = await base44.entities.SessionOp.filter({ session_id }, "-seq", 1);
+    let seq = lastOps[0]?.seq ?? 0;
+    const appendOp = (op_type: string, payload: Record<string, unknown>) =>
+      base44.entities.SessionOp.create({
+        session_id,
+        seq: ++seq,
+        op_type,
+        payload,
+        owner_email: session.owner_email || undefined,
+      });
+
     const result = await base44.integrations.Core.InvokeLLM({
       prompt: buildPrompt(
         nodes.map((n) => ({
@@ -157,6 +169,11 @@ Deno.serve(async (req) => {
       await base44.entities.Node.delete(m.remove_id);
       removedTo.set(m.remove_id, m.keep_id);
       merged++;
+      await appendOp("merge_nodes", {
+        keep_id: m.keep_id,
+        remove_id: m.remove_id,
+        merged_summary: m.merged_summary?.slice(0, 600),
+      });
     }
 
     const resolveId = (id: string) => removedTo.get(id) ?? id;
@@ -183,12 +200,13 @@ Deno.serve(async (req) => {
       ) {
         continue;
       }
-      await base44.entities.NodeEdge.create({
+      const edge = await base44.entities.NodeEdge.create({
         from_node_id: from,
         to_node_id: to,
         relation: e.relation,
         cross_session: false,
       });
+      await appendOp("create_edge", { edge });
       seenPairs.add(key);
       edgesCreated++;
       events.push({

@@ -13,6 +13,7 @@ const Session = base44.entities.Session;
 const Node = base44.entities.Node;
 const NodeEdge = base44.entities.NodeEdge;
 const Utterance = base44.entities.Utterance;
+const SessionOp = base44.entities.SessionOp;
 
 const CANVAS_W = 2400;
 const CANVAS_H = 1600;
@@ -34,23 +35,107 @@ export default function Board() {
   // Nodes/edges present at first load render statically; later ones animate
   const initialNodeIds = useRef(null);
   const initialEdgeIds = useRef(null);
-  const nodeIdsRef = useRef(new Set());
+  const lastSeqRef = useRef(0);
   const processingRef = useRef(false);
   const cardRefs = useRef(new Map());
   const scrollRef = useRef(null);
 
-  const loadAll = useCallback(async () => {
-    const [s, n, u, allEdges] = await Promise.all([
+  // ---- Ops application: the ONLY way board state changes after initial
+  // load. Each op merges into existing state — never a wholesale replace
+  // (PLAN.md "Realtime delivery"). All handlers are idempotent so realtime
+  // and the fallback poll can overlap safely.
+  const applyOp = useCallback((op) => {
+    if (!op) return;
+    if (typeof op.seq === "number" && op.seq > lastSeqRef.current) {
+      lastSeqRef.current = op.seq;
+    }
+    const payload = op.payload || {};
+    switch (op.op_type) {
+      case "create_node": {
+        const node = payload.node;
+        if (!node?.id) return;
+        setNodes((prev) =>
+          prev.some((n) => n.id === node.id) ? prev : [...prev, node]
+        );
+        break;
+      }
+      case "attach_node": {
+        if (payload.action === "expand" && payload.summary && payload.node_id) {
+          setNodes((prev) =>
+            prev.map((n) =>
+              n.id === payload.node_id ? { ...n, summary: payload.summary } : n
+            )
+          );
+        }
+        break;
+      }
+      case "create_edge": {
+        const edge = payload.edge;
+        if (!edge?.id) return;
+        setEdges((prev) =>
+          prev.some((e) => e.id === edge.id) ? prev : [...prev, edge]
+        );
+        break;
+      }
+      case "update_status": {
+        if (!payload.node_id) return;
+        setNodes((prev) =>
+          prev.map((n) =>
+            n.id === payload.node_id ? { ...n, status: payload.status } : n
+          )
+        );
+        break;
+      }
+      case "merge_nodes": {
+        const { keep_id, remove_id, merged_summary } = payload;
+        if (!keep_id || !remove_id) return;
+        setSelectedId((sel) => (sel === remove_id ? keep_id : sel));
+        setNodes((prev) =>
+          prev
+            .filter((n) => n.id !== remove_id)
+            .map((n) =>
+              n.id === keep_id && merged_summary
+                ? { ...n, summary: merged_summary }
+                : n
+            )
+        );
+        setEdges((prev) =>
+          prev
+            .map((e) => ({
+              ...e,
+              from_node_id: e.from_node_id === remove_id ? keep_id : e.from_node_id,
+              to_node_id: e.to_node_id === remove_id ? keep_id : e.to_node_id,
+            }))
+            .filter((e) => e.from_node_id !== e.to_node_id)
+        );
+        break;
+      }
+      default:
+        break;
+    }
+  }, []);
+
+  // Session record refresh (status chip, live bars) — board state untouched
+  const refreshSession = useCallback(async () => {
+    const s = await Session.get(sessionId);
+    setSession(s);
+    return s;
+  }, [sessionId]);
+
+  // Full fetch happens exactly once, on initial page load
+  const loadInitial = useCallback(async () => {
+    const [s, n, u, allEdges, lastOps] = await Promise.all([
       Session.get(sessionId),
       Node.filter({ session_id: sessionId }, "created_date", 500),
       Utterance.filter({ session_id: sessionId }, "start_ms", 2000),
       NodeEdge.filter({}, "created_date", 1000),
+      SessionOp.filter({ session_id: sessionId }, "-seq", 1),
     ]);
     const ids = new Set(n.map((x) => x.id));
     const e = allEdges.filter(
       (edge) => ids.has(edge.from_node_id) && ids.has(edge.to_node_id)
     );
-    nodeIdsRef.current = ids;
+    lastSeqRef.current = lastOps[0]?.seq ?? 0;
     setSession(s);
     setNodes(n);
     setUtterances(u);
@@ -62,57 +147,22 @@ export default function Board() {
     return s;
   }, [sessionId]);
 
-  // Initial load + realtime subscriptions
+  // Initial load + realtime ops subscription
   useEffect(() => {
     let cancelled = false;
-    loadAll().catch(() => !cancelled && setNotFound(true));
+    loadInitial().catch(() => !cancelled && setNotFound(true));
 
-    const unsubNodes = Node.subscribe((event) => {
+    const unsubOps = SessionOp.subscribe((event) => {
+      if (event.type !== "create") return;
       if (event.data?.session_id !== sessionId) return;
-      setNodes((prev) => {
-        if (event.type === "create") {
-          nodeIdsRef.current.add(event.id);
-          return prev.some((n) => n.id === event.id)
-            ? prev
-            : [...prev, { ...event.data, id: event.id }];
-        }
-        if (event.type === "update") {
-          return prev.map((n) => (n.id === event.id ? { ...n, ...event.data } : n));
-        }
-        if (event.type === "delete") {
-          nodeIdsRef.current.delete(event.id);
-          setSelectedId((sel) => (sel === event.id ? null : sel));
-          return prev.filter((n) => n.id !== event.id);
-        }
-        return prev;
-      });
-    });
-
-    const unsubEdges = NodeEdge.subscribe((event) => {
-      setEdges((prev) => {
-        if (event.type === "create") {
-          const d = event.data || {};
-          if (!nodeIdsRef.current.has(d.from_node_id)) return prev;
-          return prev.some((e) => e.id === event.id)
-            ? prev
-            : [...prev, { ...d, id: event.id }];
-        }
-        if (event.type === "update") {
-          return prev.map((e) => (e.id === event.id ? { ...e, ...event.data } : e));
-        }
-        if (event.type === "delete") {
-          return prev.filter((e) => e.id !== event.id);
-        }
-        return prev;
-      });
+      applyOp({ ...event.data, id: event.id });
     });
 
     return () => {
       cancelled = true;
-      unsubNodes();
-      unsubEdges();
+      unsubOps();
     };
-  }, [sessionId, loadAll]);
+  }, [sessionId, loadInitial, applyOp]);
 
   // Measure card sizes so edges anchor to real centers
   useEffect(() => {
@@ -149,12 +199,33 @@ export default function Board() {
         setPhase(null);
         setUtterances((prev) => prev.map((u) => ({ ...u, processed: true })));
       }
-    }, 1500);
+    }, 1200);
   }, [sessionId]);
 
   const isLive = session?.status === "active";
   const isMicLive = isLive && session?.capture_source === "mic_live";
   const isBotLive = isLive && session?.capture_source === "bot_live";
+
+  // Fallback ops poll while live: fetches only ops NEWER than the last
+  // applied seq and merges them — an incremental catch-up, never a refetch
+  useEffect(() => {
+    if (!isLive) return;
+    const poll = setInterval(async () => {
+      try {
+        const ops = await SessionOp.filter(
+          { session_id: sessionId },
+          "seq",
+          500
+        );
+        for (const op of ops) {
+          if ((op.seq ?? 0) > lastSeqRef.current) applyOp(op);
+        }
+      } catch {
+        // keep polling
+      }
+    }, 5000);
+    return () => clearInterval(poll);
+  }, [isLive, sessionId, applyOp]);
 
   // Bot sessions: subscribe to incoming utterances + poll as a fallback
   // (webhook rows are service-role-created; realtime delivery can lag)
@@ -223,11 +294,11 @@ export default function Board() {
           ended_at: new Date().toISOString(),
         });
       }
-      await loadAll(); // status flip triggers the wrap-up mapping + linking pass
+      await refreshSession(); // status flip triggers the wrap-up pass below
     } finally {
       setEnding(false);
     }
-  }, [session, sessionId, loadAll]);
+  }, [session, sessionId, refreshSession]);
 
   // Auto-select a node when arriving from search (?node=...)
   const wantedNodeRef = useRef(searchParams.get("node"));
@@ -247,7 +318,8 @@ export default function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLive]);
 
-  // Drive Tier-1 (mapping), then Tier-2 (linking) once
+  // Wrap-up: drive Tier-1 (mapping), then Tier-2 (linking) once. Board
+  // changes arrive as ops; only the session record itself is refreshed.
   useEffect(() => {
     if (!session || processingRef.current) return;
     const needsMapping = session.status === "processing";
@@ -269,7 +341,7 @@ export default function Board() {
           }
         }
         if (!stopped) {
-          const s = await loadAll();
+          const s = await refreshSession();
           if (!s.consolidated_at) {
             setPhase("linking");
             await base44.functions.invoke("consolidate-session", {
@@ -283,7 +355,8 @@ export default function Board() {
         processingRef.current = false;
         if (!stopped) {
           setPhase(null);
-          loadAll().catch(() => {});
+          refreshSession().catch(() => {});
+          setUtterances((prev) => prev.map((u) => ({ ...u, processed: true })));
         }
       }
     })();
@@ -291,7 +364,7 @@ export default function Board() {
     return () => {
       stopped = true;
     };
-  }, [session, sessionId, loadAll]);
+  }, [session, sessionId, refreshSession]);
 
   const selectNode = useCallback((id) => {
     setSelectedId(id);
@@ -306,9 +379,21 @@ export default function Board() {
     }
   }, []);
 
-  const applyStatus = useCallback((id, status) => {
-    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, status } : n)));
-  }, []);
+  // User status toggles merge locally AND append an op so the log stays a
+  // complete record of what happened
+  const applyStatus = useCallback(
+    (id, status) => {
+      setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, status } : n)));
+      SessionOp.create({
+        session_id: sessionId,
+        seq: lastSeqRef.current + 1,
+        op_type: "update_status",
+        payload: { node_id: id, status },
+        owner_email: user?.email,
+      }).catch(() => {});
+    },
+    [sessionId, user]
+  );
 
   if (notFound) {
     return (

@@ -1,0 +1,51 @@
+{
+  "name": "SessionOp",
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Session this op belongs to"
+    },
+    "seq": {
+      "type": "integer",
+      "description": "Incrementing sequence number within the session"
+    },
+    "op_type": {
+      "type": "string",
+      "enum": [
+        "create_node",
+        "attach_node",
+        "create_edge",
+        "update_status",
+        "merge_nodes"
+      ],
+      "description": "Discrete board operation"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Op payload: create_node {node}, attach_node {node_id, utterance_id, action, summary?}, create_edge {edge}, update_status {node_id, status}, merge_nodes {keep_id, remove_id, merged_summary?}",
+      "properties": {}
+    },
+    "owner_email": {
+      "type": "string",
+      "description": "Session owner's email for RLS when a service-role writer appends"
+    }
+  },
+  "required": ["session_id", "seq", "op_type"],
+  "rls": {
+    "create": true,
+    "read": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    }
+  }
+}
