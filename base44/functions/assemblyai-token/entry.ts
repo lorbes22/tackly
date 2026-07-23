@@ -18,9 +18,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Raw key, no Bearer prefix (AssemblyAI STT convention)
+    // Raw key, no Bearer prefix (AssemblyAI STT convention).
+    // max_session_duration_seconds caps any downstream session server-side at
+    // 10 minutes — a hard billing ceiling if a client-side close ever fails
+    // to fire (crash, dropped network, force-quit). Holds are seconds long,
+    // so this is pure backstop.
     const res = await fetch(
-      "https://streaming.assemblyai.com/v3/token?expires_in_seconds=600",
+      "https://streaming.assemblyai.com/v3/token?expires_in_seconds=600&max_session_duration_seconds=600",
       { headers: { authorization: apiKey } },
     );
     if (!res.ok) {

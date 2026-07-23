@@ -2,9 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { StreamingTranscriber } from "assemblyai/streaming";
 import { base44 } from "@/api/base44Client";
 
-// Hold-to-talk capture: each hold opens a fresh AssemblyAI streaming session
-// (billing only runs while the key is held) and every release/unmount/error
-// path terminates it explicitly — an abandoned session bills until the 3h cap.
+// Hold-to-talk capture. AssemblyAI bills for connection time, not speech
+// time, so the WebSocket exists ONLY while the key is held: open on press,
+// Terminate on release. Backups, layered per docs/assemblyai-agent-instructions.md:
+// - inactivity_timeout 30s server-side (client crashes mid-hold)
+// - max_session_duration_seconds 600 on the token (hard server ceiling)
+// - pagehide/beforeunload best-effort close (tab closed mid-hold)
 // Audio path: mic MediaStream -> AudioWorklet (resample to 16 kHz, Int16 PCM,
 // 50 ms chunks) -> transcriber.sendAudio. Mirrors the SDK's own pcm16 encoder.
 
@@ -99,6 +102,11 @@ export function useHoldToTalk({ onFinalTurn }) {
         speechModel: "universal-3-5-pro",
         mode: "balanced",
         speakerLabels: true,
+        // Server closes the session if audio stops flowing for 30s — the
+        // backup for a client that crashes mid-hold and never Terminates.
+        // Audio streams continuously during a hold, so this never fires
+        // in normal use (no KeepAlive needed).
+        inactivityTimeout: 30,
       });
       transcriber.on("turn", (turn) => {
         if (!turn.transcript) return;
@@ -159,13 +167,34 @@ export function useHoldToTalk({ onFinalTurn }) {
   }, [state, teardown]);
 
   const endHold = useCallback(() => {
-    // Give the final turn a beat to arrive before terminating
-    setTimeout(() => teardown(), 700);
+    // Force the in-flight turn to finalize now, give it a beat to arrive,
+    // then Terminate — release-to-Terminate stays well under a second.
+    try {
+      transcriberRef.current?.forceEndpoint();
+    } catch {
+      // socket already gone
+    }
+    setTimeout(() => teardown(), 500);
   }, [teardown]);
 
   // Terminate on unmount, whatever state we're in
   useEffect(() => () => {
     teardown();
+  }, [teardown]);
+
+  // Best-effort clean close if the tab is closed/navigated away mid-hold.
+  // Fires the Terminate send synchronously; the server-side backups above
+  // cover the case where it doesn't get through.
+  useEffect(() => {
+    const onLeave = () => {
+      if (transcriberRef.current) teardown();
+    };
+    window.addEventListener("pagehide", onLeave);
+    window.addEventListener("beforeunload", onLeave);
+    return () => {
+      window.removeEventListener("pagehide", onLeave);
+      window.removeEventListener("beforeunload", onLeave);
+    };
   }, [teardown]);
 
   return { state, partial, error, startHold, endHold };

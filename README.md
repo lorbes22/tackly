@@ -45,6 +45,9 @@ Streaming parameters live in `src/lib/useHoldToTalk.js` (and are documented in `
 | `sampleRate` | `16000` | matches the AudioWorklet resampler |
 | `mode` | `balanced` | latency/accuracy preset; primary tuning knob |
 | `speakerLabels` | `true` | harmless single-speaker default |
+| `inactivityTimeout` | `30` | server-side backup close if a client dies mid-hold |
+
+Billing-safety lifecycle: the WebSocket exists **only while the key is held** (open on press, `forceEndpoint` + Terminate on release). Backstops: 30 s `inactivity_timeout`, a 600 s `max_session_duration_seconds` ceiling on every minted token, and `pagehide`/`beforeunload` handlers that attempt a clean close mid-hold.
 
 **Meeting bot (Recall).** `recall-start-bot` creates the session and sends a Recall bot to the pasted meeting link with `recallai_streaming` transcription and a realtime webhook (`recall-webhook`). Events are verified via the unguessable bot id plus a per-session token echoed in endpoint metadata. Utterances land via service role with `owner_email` so RLS keeps them owner-readable.
 
