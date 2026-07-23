@@ -52,7 +52,10 @@ export default function Board() {
   const initialNodeIds = useRef(null);
   const initialEdgeIds = useRef(null);
   const lastSeqRef = useRef(0);
+  const appliedOpsRef = useRef(new Set());
   const processingRef = useRef(false);
+  const inFlightRef = useRef(0);
+  const sinceConsolidateRef = useRef(0);
   const cardRefs = useRef(new Map());
   const viewportRef = useRef(null);
 
@@ -93,6 +96,13 @@ export default function Board() {
   // and the fallback poll can overlap safely.
   const applyOp = useCallback((op) => {
     if (!op) return;
+    // Dedup by op id so realtime + the fallback poll can overlap and ops can
+    // arrive out of seq order (parallel per-utterance calls) without double-
+    // applying or being skipped.
+    if (op.id) {
+      if (appliedOpsRef.current.has(op.id)) return;
+      appliedOpsRef.current.add(op.id);
+    }
     if (typeof op.seq === "number" && op.seq > lastSeqRef.current) {
       lastSeqRef.current = op.seq;
     }
@@ -193,12 +203,12 @@ export default function Board() {
 
   // Full fetch happens exactly once, on initial page load
   const loadInitial = useCallback(async () => {
-    const [s, allNodes, u, allEdges, lastOps, notes] = await Promise.all([
+    const [s, allNodes, u, allEdges, ops, notes] = await Promise.all([
       Session.get(sessionId),
       Node.filter({ session_id: sessionId }, "created_date", 500),
       Utterance.filter({ session_id: sessionId }, "start_ms", 2000),
       NodeEdge.filter({}, "created_date", 1000),
-      SessionOp.filter({ session_id: sessionId }, "-seq", 1),
+      SessionOp.filter({ session_id: sessionId }, "-seq", 3000),
       NodeNote.filter({ session_id: sessionId }, "-created_date", 1000),
     ]);
     // Hidden nodes (soft-deleted) stay in the DB but never render
@@ -214,7 +224,10 @@ export default function Board() {
         counts[note.node_id] = (counts[note.node_id] || 0) + 1;
       }
     }
-    lastSeqRef.current = lastOps[0]?.seq ?? 0;
+    // Board state is loaded directly from the tables above; seed the applied-
+    // ops set + last seq so the realtime/poll path only applies NEW ops.
+    for (const op of ops) appliedOpsRef.current.add(op.id);
+    lastSeqRef.current = ops[0]?.seq ?? 0;
     setSession(s);
     setNodes(n);
     setUtterances(u);
@@ -253,68 +266,59 @@ export default function Board() {
     setSizes(next);
   }, [nodes]);
 
-  // Live capture: incrementally classify as utterances arrive, without
-  // completing the session (process-session leaves "active" sessions open).
-  // Short debounce only coalesces near-simultaneous turns — kept low so the
-  // first node appears fast (the ~2s InvokeLLM is the real floor, not this).
-  const kickTimerRef = useRef(null);
-  const sinceConsolidateRef = useRef(0);
-  const kickProcessing = useCallback(() => {
-    clearTimeout(kickTimerRef.current);
-    kickTimerRef.current = setTimeout(async () => {
-      if (processingRef.current) {
-        kickProcessing(); // pipeline busy — try again shortly
-        return;
-      }
-      processingRef.current = true;
+  // Live capture: fire one classification call per utterance the instant it
+  // finalizes — in PARALLEL, not a serial queue. The backend atomically claims
+  // each utterance, so overlapping calls never double-process or strand rows
+  // (PLAN.md "compute in parallel, commit in order"). Board changes arrive as
+  // ops via realtime; nothing here re-fetches the board.
+  const liveProcess = useCallback(
+    (utteranceId) => {
+      inFlightRef.current += 1;
       setPhase("mapping");
-      try {
-        for (let i = 0; i < 30; i++) {
-          const res = await base44.functions.invoke("process-session", {
-            session_id: sessionId,
-          });
-          if (res.data?.done) break;
+      base44.functions
+        .invoke("process-session", {
+          session_id: sessionId,
+          utterance_ids: [utteranceId],
+        })
+        .then((res) => {
           sinceConsolidateRef.current += res.data?.processed ?? 0;
-        }
-        // Periodic live Tier-2 (PLAN.md: consolidation was only running at
-        // wrap-up, never on an interval — a cause of too-sparse connections).
-        // Catches longer-distance links + merges Tier-1's per-utterance view
-        // misses. Emits its own ops; board applies them like any other.
-        if (sinceConsolidateRef.current >= 5) {
-          sinceConsolidateRef.current = 0;
-          setPhase("linking");
-          base44.functions
-            .invoke("consolidate-session", { session_id: sessionId })
-            .catch(() => {});
-        }
-      } catch {
-        // transient — next utterance retriggers
-      } finally {
-        processingRef.current = false;
-        setPhase(null);
-        setUtterances((prev) => prev.map((u) => ({ ...u, processed: true })));
-      }
-    }, 150);
-  }, [sessionId]);
+          // Periodic live Tier-2 (merges + longer-distance links). Fire-and-
+          // forget so it never blocks live classification.
+          if (sinceConsolidateRef.current >= 5) {
+            sinceConsolidateRef.current = 0;
+            base44.functions
+              .invoke("consolidate-session", { session_id: sessionId })
+              .catch(() => {});
+          }
+        })
+        .catch(() => {
+          // Claim is released backend-side on failure; a later pass retries.
+        })
+        .finally(() => {
+          inFlightRef.current = Math.max(0, inFlightRef.current - 1);
+          if (inFlightRef.current === 0) setPhase(null);
+          setUtterances((prev) =>
+            prev.map((u) => (u.id === utteranceId ? { ...u, processed: true } : u))
+          );
+        });
+    },
+    [sessionId]
+  );
 
   const isLive = session?.status === "active";
   const isMicLive = isLive && session?.capture_source === "mic_live";
   const isBotLive = isLive && session?.capture_source === "bot_live";
 
-  // Fallback ops poll while live: fetches only ops NEWER than the last
-  // applied seq and merges them — an incremental catch-up, never a refetch
+  // Fallback ops poll while live: applies any op not already seen (applyOp
+  // dedups by id), so a dropped realtime event is caught — never a refetch.
   useEffect(() => {
     if (!isLive) return;
     const poll = setInterval(async () => {
       try {
-        const ops = await SessionOp.filter(
-          { session_id: sessionId },
-          "seq",
-          500
-        );
-        for (const op of ops) {
-          if ((op.seq ?? 0) > lastSeqRef.current) applyOp(op);
-        }
+        const ops = await SessionOp.filter({ session_id: sessionId }, "-seq", 200);
+        // Oldest-first so out-of-order arrivals apply cleanly
+        ops.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+        for (const op of ops) applyOp(op);
       } catch {
         // keep polling
       }
@@ -334,7 +338,8 @@ export default function Board() {
       setUtterances((prev) =>
         [...prev, ...fresh].sort((a, b) => (a.start_ms ?? 0) - (b.start_ms ?? 0))
       );
-      kickProcessing();
+      // Fire a classification call per fresh utterance, in parallel
+      fresh.forEach((r) => liveProcess(r.id));
     };
     const unsub = Utterance.subscribe((event) => {
       if (event.type === "create" && event.data?.session_id === sessionId) {
@@ -353,7 +358,7 @@ export default function Board() {
       clearInterval(poll);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isBotLive, sessionId, kickProcessing]);
+  }, [isBotLive, sessionId, liveProcess]);
 
   // Mic sessions: a finalized turn becomes an utterance, then classification
   const micStartRef = useRef(Date.now());
@@ -370,12 +375,12 @@ export default function Board() {
           processed: false,
         });
         setUtterances((prev) => [...prev, utt]);
-        kickProcessing();
+        liveProcess(utt.id);
       } catch {
         // dropped utterance — the transcript panel simply won't show it
       }
     },
-    [sessionId, user, kickProcessing]
+    [sessionId, user, liveProcess]
   );
 
   const endLiveSession = useCallback(async () => {
@@ -405,13 +410,19 @@ export default function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes]);
 
-  // Live catch-up: unprocessed utterances left over from a previous visit
+  // Live catch-up: fire a parallel call for each unprocessed utterance left
+  // over from a previous visit (each claims its own row, so this is safe).
+  const caughtUpRef = useRef(false);
   useEffect(() => {
-    if (isLive && utterances.some((u) => !u.processed)) {
-      kickProcessing();
+    if (isLive && !caughtUpRef.current) {
+      const stale = utterances.filter((u) => !u.processed);
+      if (stale.length) {
+        caughtUpRef.current = true;
+        stale.forEach((u) => liveProcess(u.id));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLive]);
+  }, [isLive, utterances]);
 
   // Wrap-up: drive Tier-1 (mapping), then Tier-2 (linking) once. Board
   // changes arrive as ops; only the session record itself is refreshed.

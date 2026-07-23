@@ -186,7 +186,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { session_id } = await req.json();
+    const { session_id, utterance_ids } = await req.json();
     if (!session_id) {
       return Response.json({ error: "session_id is required" }, { status: 400 });
     }
@@ -200,31 +200,63 @@ Deno.serve(async (req) => {
     // Live sessions (mic/bot still capturing) stay "active" — only the
     // import/wrap-up flow ("processing") transitions to complete here.
     const isLive = session.status === "active";
-    const batchSize = isLive ? 1 : IMPORT_BATCH_SIZE;
 
-    const pending = await base44.entities.Utterance.filter(
-      { session_id, processed: false },
-      "start_ms",
-      batchSize,
-    );
+    // Candidate utterances: the specific ids the caller passed (live per-
+    // utterance path — calls fire in parallel), or the next pending batch
+    // (import/wrap-up path).
+    let candidates;
+    if (Array.isArray(utterance_ids) && utterance_ids.length) {
+      candidates = await base44.entities.Utterance.filter(
+        { session_id, processed: false },
+        "start_ms",
+        200,
+      ).then((rows) => rows.filter((r) => utterance_ids.includes(r.id)));
+    } else {
+      candidates = await base44.entities.Utterance.filter(
+        { session_id, processed: false },
+        "start_ms",
+        IMPORT_BATCH_SIZE,
+      );
+    }
 
-    if (pending.length === 0) {
+    // Atomically CLAIM each candidate (compare-and-set processed false->true).
+    // Only one concurrent call wins a given utterance, so parallel calls never
+    // double-process or strand rows — this is the fix for the dropped-content
+    // bug (PLAN.md "compute in parallel, commit in order").
+    const batch = [];
+    for (const u of candidates) {
+      const claim = await base44.entities.Utterance.updateMany(
+        { id: u.id, processed: false },
+        { $set: { processed: true } },
+      );
+      if (claim.updated === 1) batch.push(u);
+    }
+
+    if (batch.length === 0) {
       if (!isLive && session.status !== "complete") {
-        await base44.entities.Session.update(session_id, {
-          status: "complete",
-          ended_at: new Date().toISOString(),
-        });
+        const remaining = await base44.entities.Utterance.filter(
+          { session_id, processed: false },
+          "start_ms",
+          1,
+        );
+        if (remaining.length === 0) {
+          await base44.entities.Session.update(session_id, {
+            status: "complete",
+            ended_at: new Date().toISOString(),
+          });
+        }
       }
       return Response.json({ done: true, created: 0, processed: 0 });
     }
 
-    // Independent reads run in parallel — nodes for context, last seq for the
-    // ops counter. Hidden nodes are excluded as re-attach targets (the user
-    // deliberately hid them) but still count for placement offset.
-    const [existingNodes, lastOps] = await Promise.all([
-      base44.entities.Node.filter({ session_id }, "created_date", 200),
-      base44.entities.SessionOp.filter({ session_id }, "-seq", 1),
-    ]);
+    // Read node context AFTER claiming, so we see the latest board. Hidden
+    // nodes are excluded as re-attach targets (deliberately hidden) but still
+    // count for placement offset.
+    const existingNodes = await base44.entities.Node.filter(
+      { session_id },
+      "created_date",
+      200,
+    );
     const visibleNodes = existingNodes.filter((n) => !n.hidden);
     const openList = visibleNodes.map((n) => ({
       id: n.id,
@@ -233,24 +265,42 @@ Deno.serve(async (req) => {
       summary: (n.summary || "").slice(0, 160),
     }));
 
-    // Ops are appended with an incrementing per-session sequence number
-    let seq = lastOps[0]?.seq ?? 0;
-    const appendOp = (op_type: string, payload: Record<string, unknown>) =>
+    // Collision-resistant seq: derived from each op's utterance start_ms so ops
+    // sort by speech order and concurrent calls (different utterances) never
+    // collide — no shared counter to race on.
+    let opCounter = 0;
+    const appendOp = (
+      op_type: string,
+      payload: Record<string, unknown>,
+      baseMs: number,
+    ) =>
       base44.entities.SessionOp.create({
         session_id,
-        seq: ++seq,
+        seq: Math.round(baseMs) * 1000 + opCounter++,
         op_type,
         payload,
         owner_email: session.owner_email || undefined,
       });
 
-    const { data: result } = await classifyWithTool({
-      client: makeAnthropic(),
-      model: TIER1_MODEL,
-      system: TIER1_SYSTEM,
-      user: buildUserPrompt(session.type, openList, pending),
-      tool: CLASSIFY_TOOL,
-    });
+    let result;
+    try {
+      ({ data: result } = await classifyWithTool({
+        client: makeAnthropic(),
+        model: TIER1_MODEL,
+        system: TIER1_SYSTEM,
+        user: buildUserPrompt(session.type, openList, batch),
+        tool: CLASSIFY_TOOL,
+      }));
+    } catch (err) {
+      // Release the claims so a retry can pick these utterances back up.
+      for (const u of batch) {
+        await base44.entities.Utterance.updateMany(
+          { id: u.id },
+          { $set: { processed: false } },
+        ).catch(() => {});
+      }
+      throw err;
+    }
 
     let created = 0;
     const links: { node_id: string; utterance_id: string }[] = [];
@@ -283,8 +333,9 @@ Deno.serve(async (req) => {
     let edgesCreated = 0;
 
     for (const d of result?.decisions ?? []) {
-      const utt = pending[d.index];
+      const utt = batch[d.index];
       if (!utt || d.action === "skip") continue;
+      const baseMs = utt.start_ms ?? Date.now();
 
       if (d.action === "new" && d.type && NODE_TYPES.includes(d.type) && d.title) {
         // If the model didn't give a valid parent but the board already has
@@ -315,7 +366,7 @@ Deno.serve(async (req) => {
         });
         created++;
         // Push the op the moment the node exists — no waiting for the batch
-        await appendOp("create_node", { node });
+        await appendOp("create_node", { node }, baseMs);
         // Draw the connector from parent to child, live
         if (parentId) {
           const edge = await base44.entities.NodeEdge.create({
@@ -324,7 +375,7 @@ Deno.serve(async (req) => {
             relation,
             cross_session: false,
           });
-          await appendOp("create_edge", { edge });
+          await appendOp("create_edge", { edge }, baseMs);
           edgesCreated++;
         }
         links.push({ node_id: node.id, utterance_id: utt.id });
@@ -346,7 +397,7 @@ Deno.serve(async (req) => {
           utterance_id: utt.id,
           action: d.action,
           summary: d.action === "expand" ? d.summary?.slice(0, 600) : undefined,
-        });
+        }, baseMs);
         links.push({ node_id: target.id, utterance_id: utt.id });
         events.push({
           user_id: user.id,
@@ -356,13 +407,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Tail writes are independent — run them together
+    // Utterances were already claimed (processed=true) up front; here we just
+    // write the derived links + usage events.
     await Promise.all([
       links.length ? base44.entities.NodeUtteranceLink.bulkCreate(links) : null,
       events.length ? base44.entities.UsageEvent.bulkCreate(events) : null,
-      base44.entities.Utterance.bulkUpdate(
-        pending.map((u) => ({ id: u.id, processed: true })),
-      ),
     ]);
 
     const nextPending = await base44.entities.Utterance.filter(
@@ -378,7 +427,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    return Response.json({ done, created, edges: edgesCreated, processed: pending.length });
+    return Response.json({ done, created, edges: edgesCreated, processed: batch.length });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 500 });
   }
