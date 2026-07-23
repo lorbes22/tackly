@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { NODE_TYPE_STYLES } from "@/components/NodeCard";
-import { ArrowRight, Check, RotateCcw, X } from "lucide-react";
+import { ArrowRight, Check, Plus, RotateCcw, Trash2, X } from "lucide-react";
 
 const RELATION_LABELS = {
   expands: "expands",
@@ -29,11 +29,17 @@ export function NodeDetailPanel({
   nodes,
   edges,
   utterances,
+  noteCount = 0,
   onClose,
   onSelectNode,
   onStatusChange,
+  onAddNote,
+  onHideNode,
 }) {
   const [linkedUtteranceIds, setLinkedUtteranceIds] = useState(null);
+  const [notes, setNotes] = useState(null);
+  const [draftNote, setDraftNote] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,6 +53,37 @@ export function NodeDetailPanel({
       cancelled = true;
     };
   }, [node.id]);
+
+  // Load notes when the node has any (the board tells us via noteCount)
+  useEffect(() => {
+    let cancelled = false;
+    if (noteCount === 0) {
+      setNotes([]);
+      return;
+    }
+    setNotes(null);
+    base44.entities.NodeNote.filter({ node_id: node.id }, "created_date", 200)
+      .then((rows) => !cancelled && setNotes(rows))
+      .catch(() => !cancelled && setNotes([]));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.id]);
+
+  const submitNote = async (e) => {
+    e.preventDefault();
+    const text = draftNote.trim();
+    if (!text || savingNote) return;
+    setSavingNote(true);
+    try {
+      const note = await onAddNote?.(node.id, text);
+      if (note) setNotes((prev) => [...(prev || []), note]);
+      setDraftNote("");
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
   const style = NODE_TYPE_STYLES[node.type] || NODE_TYPE_STYLES.idea;
   const action = statusAction(node);
@@ -180,6 +217,58 @@ export function NodeDetailPanel({
             </div>
           )}
         </section>
+
+        <section className="mt-5">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-ink-soft">
+            Notes
+          </h3>
+          {notes === null ? (
+            <div className="mt-3 flex justify-center py-3">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-line border-t-periwinkle" />
+            </div>
+          ) : (
+            notes.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {notes.map((n) => (
+                  <div
+                    key={n.id}
+                    className="rounded-lg border-2 border-ink bg-note-gold/60 px-3 py-2 text-sm text-ink shadow-brutal-sm"
+                  >
+                    {n.text}
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+          <form onSubmit={submitNote} className="mt-2 flex gap-2">
+            <input
+              type="text"
+              value={draftNote}
+              onChange={(e) => setDraftNote(e.target.value)}
+              placeholder="Add a note…"
+              className="h-9 flex-1 rounded-lg border border-line bg-paper px-2.5 text-sm placeholder:text-ink-faint focus:border-periwinkle"
+            />
+            <button
+              type="submit"
+              disabled={!draftNote.trim() || savingNote}
+              title="Add note"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-ink bg-periwinkle text-white shadow-brutal-sm transition-transform hover:-translate-y-px disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </form>
+        </section>
+      </div>
+
+      <div className="border-t border-line px-4 py-3">
+        <button
+          onClick={() => onHideNode?.(node.id)}
+          className="flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm font-medium text-ink-soft transition-colors hover:bg-note-coral hover:text-ink"
+          title="Remove this node from the board (its transcript memory is kept)"
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete from board
+        </button>
       </div>
     </div>
   );

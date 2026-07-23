@@ -14,6 +14,7 @@ const Node = base44.entities.Node;
 const NodeEdge = base44.entities.NodeEdge;
 const Utterance = base44.entities.Utterance;
 const SessionOp = base44.entities.SessionOp;
+const NodeNote = base44.entities.NodeNote;
 
 const CANVAS_W = 2400;
 const CANVAS_H = 1600;
@@ -27,7 +28,9 @@ export default function Board() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [utterances, setUtterances] = useState([]);
+  const [noteCounts, setNoteCounts] = useState({});
   const [sizes, setSizes] = useState({});
+  const seenNoteIdsRef = useRef(new Set());
   const [showTranscript, setShowTranscript] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [phase, setPhase] = useState(null); // null | "mapping" | "linking"
@@ -110,6 +113,28 @@ export default function Board() {
         );
         break;
       }
+      case "add_note": {
+        if (!payload.node_id || !payload.note_id) return;
+        setNoteCounts((prev) => {
+          const seen = seenNoteIdsRef.current;
+          if (seen.has(payload.note_id)) return prev; // idempotent
+          seen.add(payload.note_id);
+          return { ...prev, [payload.node_id]: (prev[payload.node_id] || 0) + 1 };
+        });
+        break;
+      }
+      case "hide_node": {
+        if (!payload.node_id) return;
+        setSelectedId((sel) => (sel === payload.node_id ? null : sel));
+        setNodes((prev) => prev.filter((n) => n.id !== payload.node_id));
+        setEdges((prev) =>
+          prev.filter(
+            (e) =>
+              e.from_node_id !== payload.node_id && e.to_node_id !== payload.node_id
+          )
+        );
+        break;
+      }
       default:
         break;
     }
@@ -124,22 +149,33 @@ export default function Board() {
 
   // Full fetch happens exactly once, on initial page load
   const loadInitial = useCallback(async () => {
-    const [s, n, u, allEdges, lastOps] = await Promise.all([
+    const [s, allNodes, u, allEdges, lastOps, notes] = await Promise.all([
       Session.get(sessionId),
       Node.filter({ session_id: sessionId }, "created_date", 500),
       Utterance.filter({ session_id: sessionId }, "start_ms", 2000),
       NodeEdge.filter({}, "created_date", 1000),
       SessionOp.filter({ session_id: sessionId }, "-seq", 1),
+      NodeNote.filter({ session_id: sessionId }, "-created_date", 1000),
     ]);
+    // Hidden nodes (soft-deleted) stay in the DB but never render
+    const n = allNodes.filter((x) => !x.hidden);
     const ids = new Set(n.map((x) => x.id));
     const e = allEdges.filter(
       (edge) => ids.has(edge.from_node_id) && ids.has(edge.to_node_id)
     );
+    const counts = {};
+    for (const note of notes) {
+      seenNoteIdsRef.current.add(note.id);
+      if (ids.has(note.node_id)) {
+        counts[note.node_id] = (counts[note.node_id] || 0) + 1;
+      }
+    }
     lastSeqRef.current = lastOps[0]?.seq ?? 0;
     setSession(s);
     setNodes(n);
     setUtterances(u);
     setEdges(e);
+    setNoteCounts(counts);
     if (initialNodeIds.current === null) {
       initialNodeIds.current = ids;
       initialEdgeIds.current = new Set(e.map((x) => x.id));
@@ -394,20 +430,66 @@ export default function Board() {
     }
   }, []);
 
-  // User status toggles merge locally AND append an op so the log stays a
-  // complete record of what happened
-  const applyStatus = useCallback(
-    (id, status) => {
-      setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, status } : n)));
+  // User-initiated ops: apply locally now, append to the log so it stays a
+  // complete record and other viewers get the change via realtime.
+  const appendUserOp = useCallback(
+    (op_type, payload) =>
       SessionOp.create({
         session_id: sessionId,
         seq: lastSeqRef.current + 1,
-        op_type: "update_status",
-        payload: { node_id: id, status },
+        op_type,
+        payload,
         owner_email: user?.email,
-      }).catch(() => {});
-    },
+      }).catch(() => {}),
     [sessionId, user]
+  );
+
+  const applyStatus = useCallback(
+    (id, status) => {
+      setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, status } : n)));
+      appendUserOp("update_status", { node_id: id, status });
+    },
+    [appendUserOp]
+  );
+
+  const addNote = useCallback(
+    async (nodeId, text) => {
+      const clean = text.trim();
+      if (!clean) return null;
+      const note = await NodeNote.create({
+        node_id: nodeId,
+        session_id: sessionId,
+        text: clean,
+        owner_email: user?.email,
+      });
+      seenNoteIdsRef.current.add(note.id);
+      setNoteCounts((prev) => ({
+        ...prev,
+        [nodeId]: (prev[nodeId] || 0) + 1,
+      }));
+      appendUserOp("add_note", { node_id: nodeId, note_id: note.id, text: clean });
+      return note;
+    },
+    [sessionId, user, appendUserOp]
+  );
+
+  // Soft delete: hide from the board only. The node record and its utterance
+  // links stay intact so the memory persists (PLAN.md).
+  const hideNode = useCallback(
+    async (nodeId) => {
+      setSelectedId((sel) => (sel === nodeId ? null : sel));
+      setNodes((prev) => prev.filter((n) => n.id !== nodeId));
+      setEdges((prev) =>
+        prev.filter((e) => e.from_node_id !== nodeId && e.to_node_id !== nodeId)
+      );
+      try {
+        await Node.update(nodeId, { hidden: true });
+        appendUserOp("hide_node", { node_id: nodeId });
+      } catch {
+        // best-effort; a failed hide re-appears on next full load
+      }
+    },
+    [appendUserOp]
   );
 
   if (notFound) {
@@ -509,6 +591,7 @@ export default function Board() {
                     else cardRefs.current.delete(node.id);
                   }}
                   node={node}
+                  noteCount={noteCounts[node.id] || 0}
                   animate={initialNodeIds.current && !initialNodeIds.current.has(node.id)}
                   className={selectedId === node.id ? "shadow-brutal-lg ring-2 ring-periwinkle" : ""}
                   onClick={() => {
@@ -555,9 +638,12 @@ export default function Board() {
               nodes={nodes}
               edges={edges}
               utterances={utterances}
+              noteCount={noteCounts[selectedNode.id] || 0}
               onClose={() => setSelectedId(null)}
               onSelectNode={selectNode}
               onStatusChange={applyStatus}
+              onAddNote={addNote}
+              onHideNode={hideNode}
             />
           ) : (
             <div className="flex h-full flex-col">

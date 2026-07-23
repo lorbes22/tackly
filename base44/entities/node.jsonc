@@ -29,6 +29,11 @@
       "default": "na",
       "description": "Lifecycle: open/resolved for question+risk, open/done for action, na for static types"
     },
+    "hidden": {
+      "type": "boolean",
+      "default": false,
+      "description": "Soft-delete / board-visibility toggle, separate from status. Hidden nodes keep their record + utterance links but never render and aren't re-attach targets."
+    },
     "confidence": {
       "type": "number",
       "minimum": 0,

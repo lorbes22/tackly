@@ -2,6 +2,7 @@
 // flat pastel fill, hard ink border, offset shadow, slight random rotation.
 // Question and Risk nodes keep a dashed border while open.
 import { forwardRef } from "react";
+import { StickyNote } from "lucide-react";
 
 export const NODE_TYPE_STYLES = {
   idea: { fill: "bg-note-lavender", label: "Idea" },
@@ -22,7 +23,7 @@ const STATUS_LABELS = {
 };
 
 export const NodeCard = forwardRef(function NodeCard(
-  { node, onClick, animate = false, className = "" },
+  { node, onClick, animate = false, className = "", noteCount = 0 },
   ref
 ) {
   const style = NODE_TYPE_STYLES[node.type] || NODE_TYPE_STYLES.idea;
@@ -37,10 +38,19 @@ export const NodeCard = forwardRef(function NodeCard(
       type="button"
       onClick={onClick}
       style={{ "--note-rotation": `${node.rotation_deg || 0}deg` }}
-      className={`w-56 rounded-note border-2 border-ink p-3.5 text-left shadow-brutal transition-all [transform:rotate(var(--note-rotation))] hover:shadow-brutal-lg hover:!opacity-100 focus-visible:shadow-brutal-lg ${
+      className={`group/node relative w-56 rounded-note border-2 border-ink p-3.5 text-left shadow-brutal transition-all [transform:rotate(var(--note-rotation))] hover:shadow-brutal-lg hover:!opacity-100 focus-visible:shadow-brutal-lg ${
         isOpen ? "border-dashed" : ""
       } ${style.muted ? "opacity-70" : ""} ${style.fill} ${animate ? "animate-pop-in" : ""} ${className}`}
     >
+      {noteCount > 0 && (
+        <span
+          className="absolute -right-2 -top-2 flex h-6 items-center gap-1 rounded-full border-2 border-ink bg-paper-raised px-1.5 text-[10px] font-bold text-ink opacity-0 shadow-brutal-sm transition-opacity group-hover/node:opacity-100"
+          title={`${noteCount} ${noteCount === 1 ? "note" : "notes"}`}
+        >
+          <StickyNote className="h-3 w-3" />
+          {noteCount}
+        </span>
+      )}
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-bold uppercase tracking-widest text-ink/60">
           {style.label}

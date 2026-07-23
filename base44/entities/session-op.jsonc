@@ -17,13 +17,15 @@
         "attach_node",
         "create_edge",
         "update_status",
-        "merge_nodes"
+        "merge_nodes",
+        "add_note",
+        "hide_node"
       ],
       "description": "Discrete board operation"
     },
     "payload": {
       "type": "object",
-      "description": "Op payload: create_node {node}, attach_node {node_id, utterance_id, action, summary?}, create_edge {edge}, update_status {node_id, status}, merge_nodes {keep_id, remove_id, merged_summary?}",
+      "description": "Op payload: create_node {node}, attach_node {node_id, utterance_id, action, summary?}, create_edge {edge}, update_status {node_id, status}, merge_nodes {keep_id, remove_id, merged_summary?}, add_note {node_id, note_id, text}, hide_node {node_id}",
       "properties": {}
     },
     "owner_email": {
