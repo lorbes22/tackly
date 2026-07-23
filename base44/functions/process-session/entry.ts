@@ -1,11 +1,16 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
+import { classifyWithTool, makeAnthropic } from "../../shared/claude.ts";
 
-// Tier-1 classification. Emits a discrete SessionOp (create_node /
-// attach_node) the instant each decision is applied — the ops log is what
-// the frontend subscribes to; it never re-fetches the board (PLAN.md
-// "Realtime delivery"). Live sessions classify ONE utterance per call so
-// ops stream per-utterance with no batching; imports batch utterances into
-// one LLM call for throughput but still emit ops per decision.
+// Tier-1 classification. Calls Claude Haiku 4.5 directly (not Base44's
+// InvokeLLM) — fast, and the static system prompt is prompt-cached since it's
+// identical on every utterance (PLAN.md §1). Emits a discrete SessionOp
+// (create_node / attach_node / create_edge) the instant each decision is
+// applied — the ops log is what the frontend subscribes to; it never
+// re-fetches the board (PLAN.md "Realtime delivery"). Live sessions classify
+// ONE utterance per call so ops stream per-utterance with no batching;
+// imports batch utterances into one call for throughput but still emit ops
+// per decision.
+const TIER1_MODEL = "claude-haiku-4-5-20251001";
 const IMPORT_BATCH_SIZE = 12;
 const NODE_TYPES = ["idea", "fact", "opinion", "question", "decision", "risk", "action", "aside"];
 const OPEN_STATUS_TYPES = new Set(["question", "risk", "action"]);
@@ -47,21 +52,10 @@ function placeNode(placed: Placed[], anchorId: string | null) {
   return { position_x: maxX + H_GAP + jitter(), position_y: CENTER_Y, rotation_deg };
 }
 
-function buildPrompt(
-  sessionType: string,
-  openList: { id: string; type: string; title: string; summary: string }[],
-  batch: { speaker_label?: string; text: string }[],
-) {
-  const nodesBlock = openList.length
-    ? JSON.stringify(openList, null, 1)
-    : "none yet";
-  const utterancesBlock = batch
-    .map((u, i) => `${i}. [${u.speaker_label || "Speaker"}]: ${u.text}`)
-    .join("\n");
-
-  return `You are the classification engine for Tackly, a tool that turns ${
-    sessionType === "meeting" ? "meeting transcripts" : "spoken thinking"
-  } into a map of thought nodes.
+// Static across every utterance → cached. Contains no per-call data, so the
+// cache prefix (this system prompt + the tool definition) is byte-identical
+// each time and is served from cache after the first call.
+const TIER1_SYSTEM = `You are the classification engine for Tackly, a tool that turns talk — meetings or personal spoken thinking — into a map of thought nodes.
 
 Analytical node types (real substance worth mapping):
 - idea: a proposal, suggestion, or possibility raised
@@ -74,12 +68,6 @@ Analytical node types (real substance worth mapping):
 
 One non-analytical type:
 - aside: a tangential or personal remark that has SOME real content or reaction worth keeping, but no analytical weight — an off-topic aside, a personal note, a light reaction. NOT the same as filler.
-
-Existing nodes in this session (id, type, title, summary):
-${nodesBlock}
-
-New utterances (index, speaker, text):
-${utterancesBlock}
 
 For EACH utterance index, decide exactly one action. First choose the bucket:
 1. SKIP — true filler with no content: "um", "okay", "let's see", "right", greetings, acknowledgements, dead air. Drop these entirely.
@@ -104,7 +92,72 @@ ALSO return "edges": connections between a node you are creating THIS turn and a
 - "expands": builds on or adds detail to another node
 - "relates_to": a strong thematic link that isn't one of the above
 Reference nodes by "from" and "to": use an existing node's id, or "new:N" to reference the node created by decision index N this turn. Only propose edges you're genuinely confident about, but don't be stingy — err toward surfacing a real connection over missing it. No self-edges, no duplicates of edges already implied by the existing map.`;
+
+// Volatile per-call data goes AFTER the cached prefix (in the user message).
+function buildUserPrompt(
+  sessionType: string,
+  openList: { id: string; type: string; title: string; summary: string }[],
+  batch: { speaker_label?: string; text: string }[],
+) {
+  const nodesBlock = openList.length
+    ? JSON.stringify(openList, null, 1)
+    : "none yet";
+  const utterancesBlock = batch
+    .map((u, i) => `${i}. [${u.speaker_label || "Speaker"}]: ${u.text}`)
+    .join("\n");
+
+  return `Session mode: ${sessionType === "meeting" ? "meeting" : "personal"}
+
+Existing nodes in this session (id, type, title, summary):
+${nodesBlock}
+
+New utterances (index, speaker, text):
+${utterancesBlock}
+
+Classify each utterance and propose edges using the record_classification tool.`;
 }
+
+// The tool's input_schema is the structured response contract (formerly the
+// InvokeLLM response_json_schema). It's static, so it's part of the cache.
+const CLASSIFY_TOOL = {
+  name: "record_classification",
+  description:
+    "Record the classification decision for each utterance and any edges between nodes.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      decisions: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            index: { type: "integer" },
+            action: { type: "string", enum: ["skip", "new", "attach", "expand"] },
+            type: { type: "string", enum: NODE_TYPES },
+            title: { type: "string" },
+            summary: { type: "string" },
+            node_id: { type: "string" },
+            confidence: { type: "number" },
+          },
+          required: ["index", "action"],
+        },
+      },
+      edges: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            from: { type: "string" },
+            to: { type: "string" },
+            relation: { type: "string", enum: RELATIONS },
+          },
+          required: ["from", "to", "relation"],
+        },
+      },
+    },
+    required: ["decisions"],
+  },
+};
 
 Deno.serve(async (req) => {
   try {
@@ -172,45 +225,12 @@ Deno.serve(async (req) => {
         owner_email: session.owner_email || undefined,
       });
 
-    const result = await base44.integrations.Core.InvokeLLM({
-      prompt: buildPrompt(session.type, openList, pending),
-      response_json_schema: {
-        type: "object",
-        properties: {
-          decisions: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                index: { type: "integer" },
-                action: {
-                  type: "string",
-                  enum: ["skip", "new", "attach", "expand"],
-                },
-                type: { type: "string", enum: NODE_TYPES },
-                title: { type: "string" },
-                summary: { type: "string" },
-                node_id: { type: "string" },
-                confidence: { type: "number" },
-              },
-              required: ["index", "action"],
-            },
-          },
-          edges: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                from: { type: "string" },
-                to: { type: "string" },
-                relation: { type: "string", enum: RELATIONS },
-              },
-              required: ["from", "to", "relation"],
-            },
-          },
-        },
-        required: ["decisions"],
-      },
+    const { data: result } = await classifyWithTool({
+      client: makeAnthropic(),
+      model: TIER1_MODEL,
+      system: TIER1_SYSTEM,
+      user: buildUserPrompt(session.type, openList, pending),
+      tool: CLASSIFY_TOOL,
     });
 
     let created = 0;

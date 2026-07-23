@@ -1,16 +1,16 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
+import { makeAnthropic, reasonForJson } from "../../shared/claude.ts";
 
-// Tier-2 consolidation: a heavier pass over the whole session map.
-// Merges near-duplicate nodes and proposes the connector edges between
-// nodes that Tier-1's narrow per-utterance context can't see.
+// Tier-2 consolidation: a heavier pass over the whole session map, calling
+// Claude Sonnet 5 directly (not Base44's InvokeLLM) with adaptive thinking on
+// — no tight latency budget here, and the deeper reasoning is worth it
+// (PLAN.md §1). Merges near-duplicate nodes and proposes the connector edges
+// between nodes that Tier-1's narrow per-utterance context can't see.
 
+const TIER2_MODEL = "claude-sonnet-5";
 const RELATIONS = ["expands", "answers", "blocks", "relates_to"];
 
-function buildPrompt(
-  nodes: { id: string; type: string; title: string; summary: string; status: string }[],
-  existingEdges: { from_node_id: string; to_node_id: string }[],
-) {
-  return `You are the consolidation engine for Tackly, a tool that maps spoken thought into nodes. Below is the full node map for one session. Your job:
+const TIER2_SYSTEM = `You are the consolidation engine for Tackly, a tool that maps spoken thought into nodes. You are given the full node map for one session. Your job:
 
 1. "merges" — find pairs that are the SAME thought captured twice (near-duplicates). For each, pick the better node to keep and write a merged 1-2 sentence summary. Only merge true duplicates of the same type — related-but-distinct thoughts stay separate.
 
@@ -21,9 +21,20 @@ function buildPrompt(
 - "relates_to": strong thematic link (use sparingly)
 
 Rules:
-- Use only node ids from the list below.
-- A good map is sparse — prefer a handful of high-signal edges over a hairball. At most ${Math.max(3, Math.round(nodes.length * 1.2))} edges.
+- Use only node ids from the provided list.
+- A good map is sparse — prefer a handful of high-signal edges over a hairball.
 - Never propose an edge for a pair you are merging, an edge already listed as existing, or a self-edge.
+
+Return ONLY a JSON object (no prose, no markdown fences) of exactly this shape:
+{"merges":[{"keep_id":"<id>","remove_id":"<id>","merged_summary":"<text>"}],"edges":[{"from_id":"<id>","to_id":"<id>","relation":"expands|answers|blocks|relates_to"}]}
+merged_summary is optional. Both arrays may be empty.`;
+
+function buildUserPrompt(
+  nodes: { id: string; type: string; title: string; summary: string; status: string }[],
+  existingEdges: { from_node_id: string; to_node_id: string }[],
+) {
+  const maxEdges = Math.max(3, Math.round(nodes.length * 1.2));
+  return `Propose at most ${maxEdges} edges.
 
 Nodes:
 ${JSON.stringify(nodes, null, 1)}
@@ -87,8 +98,11 @@ Deno.serve(async (req) => {
         owner_email: session.owner_email || undefined,
       });
 
-    const result = await base44.integrations.Core.InvokeLLM({
-      prompt: buildPrompt(
+    const { data: result } = await reasonForJson({
+      client: makeAnthropic(),
+      model: TIER2_MODEL,
+      system: TIER2_SYSTEM,
+      user: buildUserPrompt(
         nodes.map((n) => ({
           id: n.id,
           type: n.type,
@@ -98,36 +112,6 @@ Deno.serve(async (req) => {
         })),
         sessionEdges,
       ),
-      response_json_schema: {
-        type: "object",
-        properties: {
-          merges: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                keep_id: { type: "string" },
-                remove_id: { type: "string" },
-                merged_summary: { type: "string" },
-              },
-              required: ["keep_id", "remove_id"],
-            },
-          },
-          edges: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                from_id: { type: "string" },
-                to_id: { type: "string" },
-                relation: { type: "string", enum: RELATIONS },
-              },
-              required: ["from_id", "to_id", "relation"],
-            },
-          },
-        },
-        required: ["merges", "edges"],
-      },
     });
 
     // Apply merges first; remap or drop anything touching a removed node
