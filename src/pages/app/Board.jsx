@@ -8,8 +8,12 @@ import { EdgeLayer } from "@/components/EdgeLayer";
 import { NodeDetailPanel } from "@/components/NodeDetailPanel";
 import { MicBar, BotBar, LiveUtteranceFeed } from "@/components/LiveBars";
 import { usePanZoom } from "@/lib/usePanZoom";
+import { boardToSvg, exportPng, exportSvg } from "@/lib/boardExport";
 import {
   ArrowLeft,
+  Download,
+  FileCode,
+  Image,
   Maximize2,
   PanelRightClose,
   PanelRightOpen,
@@ -43,6 +47,7 @@ export default function Board() {
   const [selectedId, setSelectedId] = useState(null);
   const [phase, setPhase] = useState(null); // null | "mapping" | "linking"
   const [notFound, setNotFound] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   // Nodes/edges present at first load render statically; later ones animate
   const initialNodeIds = useRef(null);
   const initialEdgeIds = useRef(null);
@@ -530,6 +535,22 @@ export default function Board() {
     [appendUserOp]
   );
 
+  const runExport = useCallback(
+    async (format) => {
+      setExportOpen(false);
+      const svg = boardToSvg(nodes, edges, sizes);
+      if (!svg) return;
+      const base = (session?.title || "tackly-board")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "")
+        .slice(0, 60) || "tackly-board";
+      if (format === "svg") exportSvg(svg, `${base}.svg`);
+      else await exportPng(svg, `${base}.png`);
+    },
+    [nodes, edges, sizes, session]
+  );
+
   if (notFound) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-paper">
@@ -590,6 +611,40 @@ export default function Board() {
             )}
             <span className="hidden md:inline">Transcript</span>
           </button>
+
+          <div className="relative">
+            <button
+              onClick={() => setExportOpen((v) => !v)}
+              disabled={nodes.length === 0}
+              title="Export board"
+              className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-ink-soft transition-colors hover:bg-paper-sunken hover:text-ink disabled:opacity-40"
+            >
+              <Download className="h-4 w-4" />
+              <span className="hidden md:inline">Export</span>
+            </button>
+            {exportOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setExportOpen(false)}
+                />
+                <div className="absolute right-0 top-9 z-30 w-40 overflow-hidden rounded-lg border-2 border-ink bg-paper-raised shadow-brutal">
+                  <button
+                    onClick={() => runExport("png")}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-ink hover:bg-note-lavender"
+                  >
+                    <Image className="h-4 w-4" /> PNG image
+                  </button>
+                  <button
+                    onClick={() => runExport("svg")}
+                    className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-sm font-medium text-ink hover:bg-note-lavender"
+                  >
+                    <FileCode className="h-4 w-4" /> SVG vector
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
