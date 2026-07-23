@@ -12,7 +12,7 @@
     },
     "type": {
       "type": "string",
-      "enum": ["idea", "fact", "question", "decision", "risk", "action"],
+      "enum": ["idea", "fact", "opinion", "question", "decision", "risk", "action", "aside"],
       "description": "Node taxonomy type — color always encodes type"
     },
     "title": {

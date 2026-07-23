@@ -36,10 +36,12 @@ export default {
         note: {
           lavender: { DEFAULT: '#E6E1F8', edge: '#B9AEE8' }, // idea
           mint: { DEFAULT: '#DCEFE3', edge: '#A8D4B8' }, // fact
+          pink: { DEFAULT: '#FADCEB', edge: '#E5A6C4' }, // opinion
           amber: { DEFAULT: '#FCE8C8', edge: '#EBC17F' }, // question
           sky: { DEFAULT: '#DBEAF9', edge: '#A3C6E8' }, // decision
           coral: { DEFAULT: '#F7DFDA', edge: '#E0A99F' }, // risk
           gold: { DEFAULT: '#F9EDAF', edge: '#DDC65A' }, // action
+          gray: { DEFAULT: '#E9E7E2', edge: '#C3BFB6' }, // aside — muted, recedes
         },
         // shadcn/ui semantic mapping (CSS vars set in index.css)
         background: 'hsl(var(--background))',

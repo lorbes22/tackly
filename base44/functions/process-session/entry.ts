@@ -7,7 +7,7 @@ import { createClientFromRequest } from "npm:@base44/sdk";
 // ops stream per-utterance with no batching; imports batch utterances into
 // one LLM call for throughput but still emit ops per decision.
 const IMPORT_BATCH_SIZE = 12;
-const NODE_TYPES = ["idea", "fact", "question", "decision", "risk", "action"];
+const NODE_TYPES = ["idea", "fact", "opinion", "question", "decision", "risk", "action", "aside"];
 const OPEN_STATUS_TYPES = new Set(["question", "risk", "action"]);
 const RELATIONS = ["expands", "answers", "blocks", "relates_to"];
 
@@ -39,13 +39,17 @@ function buildPrompt(
     sessionType === "meeting" ? "meeting transcripts" : "spoken thinking"
   } into a map of thought nodes.
 
-Node types:
+Analytical node types (real substance worth mapping):
 - idea: a proposal, suggestion, or possibility raised
-- fact: a stated, verifiable piece of information
+- fact: a stated, objective, verifiable piece of information
+- opinion: a subjective view, preference, judgment, or reaction — distinct from fact, which is verifiable. "I think X is better" is opinion; "X shipped in March" is fact.
 - question: something raised but not yet answered
 - decision: something the group or person has committed to
 - risk: a concern, blocker, or potential problem
 - action: a task or follow-up, with an owner if known
+
+One non-analytical type:
+- aside: a tangential or personal remark that has SOME real content or reaction worth keeping, but no analytical weight — an off-topic aside, a personal note, a light reaction. NOT the same as filler.
 
 Existing nodes in this session (id, type, title, summary):
 ${nodesBlock}
@@ -53,14 +57,19 @@ ${nodesBlock}
 New utterances (index, speaker, text):
 ${utterancesBlock}
 
-For EACH utterance index, decide exactly one:
-- "skip" — filler, small talk, logistics, or content already fully captured by an existing node
-- "new" — a distinct thought worth its own node; give type, a punchy title (max 8 words), a 1-2 sentence summary, and confidence 0-1
+For EACH utterance index, decide exactly one action. First choose the bucket:
+1. SKIP — true filler with no content: "um", "okay", "let's see", "right", greetings, acknowledgements, dead air. Drop these entirely.
+2. ASIDE — has some content or a genuine reaction but is off-topic or personal, no analytical weight ("ha, my coffee's gone cold", "this reminds me of my last job"). Keep as an "aside"-type node.
+3. ANALYTICAL — real substance: classify into one of the analytical types above.
+
+Then the action:
+- "skip" — bucket 1 only, OR content already fully captured by an existing node
+- "new" — a distinct thought (aside or analytical) worth its own node; give type, a punchy title (max 8 words), a 1-2 sentence summary, and confidence 0-1
 - "attach" — restates or supports an existing node without adding new information; give that node_id
 - "expand" — adds meaningful new detail to an existing node; give node_id and an updated summary that merges the old summary with the new detail
 
 Rules:
-- Most utterances in casual conversation are "skip". Be selective — a node should be worth pinning to a wall.
+- Be selective with analytical nodes — a node should be worth pinning to a wall. But an aside with real content is worth keeping as an aside rather than dropped.
 - Prefer "attach"/"expand" over creating a near-duplicate node. node_id must come from the existing nodes list.
 - For action nodes, put the owner in the title when stated (e.g. "Maya: draft launch email").
 - A single utterance containing several distinct thoughts should still produce only its single strongest node.

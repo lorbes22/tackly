@@ -6,10 +6,13 @@ import { forwardRef } from "react";
 export const NODE_TYPE_STYLES = {
   idea: { fill: "bg-note-lavender", label: "Idea" },
   fact: { fill: "bg-note-mint", label: "Fact" },
+  opinion: { fill: "bg-note-pink", label: "Opinion" },
   question: { fill: "bg-note-amber", label: "Question" },
   decision: { fill: "bg-note-sky", label: "Decision" },
   risk: { fill: "bg-note-coral", label: "Risk" },
   action: { fill: "bg-note-gold", label: "Action" },
+  // Aside recedes: muted fill + slightly transparent so it doesn't compete
+  aside: { fill: "bg-note-gray", label: "Aside", muted: true },
 };
 
 const STATUS_LABELS = {
@@ -34,9 +37,9 @@ export const NodeCard = forwardRef(function NodeCard(
       type="button"
       onClick={onClick}
       style={{ "--note-rotation": `${node.rotation_deg || 0}deg` }}
-      className={`w-56 rounded-note border-2 border-ink p-3.5 text-left shadow-brutal transition-shadow [transform:rotate(var(--note-rotation))] hover:shadow-brutal-lg focus-visible:shadow-brutal-lg ${
+      className={`w-56 rounded-note border-2 border-ink p-3.5 text-left shadow-brutal transition-all [transform:rotate(var(--note-rotation))] hover:shadow-brutal-lg hover:!opacity-100 focus-visible:shadow-brutal-lg ${
         isOpen ? "border-dashed" : ""
-      } ${style.fill} ${animate ? "animate-pop-in" : ""} ${className}`}
+      } ${style.muted ? "opacity-70" : ""} ${style.fill} ${animate ? "animate-pop-in" : ""} ${className}`}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-bold uppercase tracking-widest text-ink/60">
