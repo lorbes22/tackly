@@ -19,17 +19,29 @@ Deno.serve(async (req) => {
       // Soft-verify for now: log on mismatch rather than reject. The bot_id +
       // per-session webhook_token check below is the real security boundary;
       // this guards against a signature-format mistake silently blacking out
-      // meeting capture again the way the webhook URL bug just did.
-      const valid = await verifyRecallSignature(secret, req, body);
-      if (!valid) {
-        console.error("recall-webhook: signature verification failed", {
-          hasWebhookId: req.headers.has("webhook-id"),
-          hasWebhookSignature: req.headers.has("webhook-signature"),
-        });
+      // meeting capture again the way the webhook URL bug just did. Wrapped
+      // in its own try/catch: a malformed-secret crypto error must never
+      // take down ingestion the way it may have been doing silently.
+      try {
+        const valid = await verifyRecallSignature(secret, req, body);
+        if (!valid) {
+          console.error("recall-webhook: signature verification failed", {
+            hasWebhookId: req.headers.has("webhook-id"),
+            hasWebhookSignature: req.headers.has("webhook-signature"),
+          });
+        }
+      } catch (verifyErr) {
+        console.error("recall-webhook: verify threw", (verifyErr as Error).message);
       }
     }
     const payload = JSON.parse(body);
-    if (payload?.event !== "transcript.data") {
+    console.log("recall-webhook: top-level", {
+      event: payload?.event,
+      topKeys: Object.keys(payload || {}),
+      dataTopKeys: payload?.data ? Object.keys(payload.data) : null,
+      botId: payload?.data?.bot?.id,
+    });
+    if (payload?.event !== "transcript.data" && payload?.event !== "participant_events.leave") {
       return Response.json({ ok: true, ignored: payload?.event });
     }
 
@@ -44,17 +56,44 @@ Deno.serve(async (req) => {
     const sessions = await db.Session.filter({ bot_id: botId }, "-created_date", 1);
     const session = sessions[0];
     if (!session) {
+      console.error("recall-webhook: no session found for bot_id", botId);
       return Response.json({ error: "Unknown bot" }, { status: 401 });
     }
 
     const echoedToken = payload?.data?.realtime_endpoint?.metadata?.token;
     if (echoedToken && echoedToken !== session.webhook_token) {
+      console.error("recall-webhook: token mismatch", {
+        echoedToken,
+        expected: session.webhook_token,
+      });
       return Response.json({ error: "Bad token" }, { status: 401 });
+    }
+
+    // The host leaving is the most reliable "the meeting is over" signal we
+    // get without the separate, manually-configured bot.call_ended webhook —
+    // this rides the same per-bot endpoint we already register automatically.
+    if (payload?.event === "participant_events.leave") {
+      const isHost = payload?.data?.data?.participant?.is_host === true;
+      if (isHost && session.status === "active") {
+        await db.Session.update(session.id, {
+          status: "processing",
+          ended_at: new Date().toISOString(),
+        });
+        console.log("recall-webhook: host left, session -> processing", session.id);
+      }
+      return Response.json({ ok: true });
     }
 
     const data = payload?.data?.data;
     const words = data?.words ?? [];
     const text = words.map((w: { text: string }) => w.text).join(" ").trim();
+    console.log("recall-webhook: parsed", {
+      event: payload?.event,
+      wordCount: words.length,
+      textPreview: text.slice(0, 80),
+      dataKeys: data ? Object.keys(data) : null,
+      isFinal: data?.is_final,
+    });
     if (!text) {
       return Response.json({ ok: true, ignored: "empty" });
     }
@@ -82,6 +121,7 @@ Deno.serve(async (req) => {
 
     return Response.json({ ok: true });
   } catch (error) {
+    console.error("recall-webhook: uncaught error", (error as Error).message, (error as Error).stack);
     return Response.json({ error: (error as Error).message }, { status: 500 });
   }
 });

@@ -27,7 +27,9 @@ v1 scope decision (updated): meeting capture is live from the start, via Recall 
 - `RECALL_API_KEY` — meeting bot capture
 - `ASSEMBLYAI_API_KEY` — personal hold-to-talk capture
 - `ANTHROPIC_API_KEY` — direct Claude calls for Tier 1/Tier 2 classification, replacing Base44's built-in LLM
-- `RECALL_STATUS_WEBHOOK_SECRET` — Svix signing secret for the bot status-change webhook (see 1a)
+- `RECALL_VERIF_SECRET` — single workspace verification secret (Recall dashboard → API keys page) that signs *all* Recall webhook deliveries — both the per-bot `realtime_endpoints` traffic (`recall-webhook`) and the dashboard-registered bot status webhook (`recall-status-webhook`). One secret, two consumers (`base44/shared/recallVerify.ts`).
+- `RESEND_API_KEY` — themed transactional emails (welcome, quota-warning, plan-upgraded), sent from `noreply@app.tackly.co`, separate from Base44's own un-customizable OTP/reset emails
+- `STRIPE_SECRET_KEY` — set, but Stripe Checkout/webhook integration itself is not yet built (see Open questions)
 
 ---
 
@@ -44,7 +46,7 @@ These share the Tier-1/Tier-2 classification pipeline and the ops-log realtime d
 | Speaker labels | Always "Me" (one speaker) | Recall's diarization — `participant.name` if the platform provides it, else `Speaker <id>` — carried straight into `Utterance.speaker_label` | Whatever the pasted transcript's "Name:" prefixes say (`parseTranscript`) |
 | Realtime cadence | As fast as AssemblyAI finalizes a turn (sub-second) | As fast as Recall's `recallai_streaming` finalizes a chunk and fires the webhook — same realtime, per-utterance shape as personal mode, not a batch/delay | N/A — all utterances exist immediately, `process-session` just churns through `IMPORT_BATCH_SIZE` (12) at a time |
 | Hold-to-talk available? | Yes, the whole time | **No** — there's no browser mic session during a live meeting, Recall's bot is the only capture source while `status === "active"`. Once the bot has left (`status` flips off `active`), the board shows a **"Continue this thread by voice"** button that re-opens the same session for mic capture — same lifecycle a personal session uses, just re-entered instead of started fresh (see Board.jsx `micContinuing`) | No live capture at all — the session goes straight to `processing` after the bulk-create |
-| How the session ends | User releases the hold key each turn; explicit "End session" flips `active → processing` | Two paths: (1) user clicks "End session" → `recall-stop-bot` tells the bot to leave + flips status, or (2) **`recall-status-webhook`** — a separate, project-wide Svix webhook Recall calls on `bot.call_ended`/`bot.fatal` (bot left/errored on its own, e.g. kicked or every human left) — auto-flips `active → processing` without the user having to remember to end it. This is a *different* webhook mechanism from `recall-webhook`: status-change events aren't deliverable via the per-bot `realtime_endpoints` token scheme, Recall requires them registered once in their dashboard's Webhooks tab against a fixed URL, verified via Svix HMAC (`svix-id`/`svix-timestamp`/`svix-signature` headers) rather than the per-session token. | Immediate — nothing to end |
+| How the session ends | User releases the hold key each turn; explicit "End session" flips `active → processing` | Three paths, in practice order of how often they fire: (1) **`participant_events.leave`** on the *same* automatic per-bot `realtime_endpoints` webhook (`recall-webhook`) — when the host leaves, the session auto-flips `active → processing`, no manual setup required, this is the primary mechanism; (2) user clicks "End session" → `recall-stop-bot` tells the bot to leave + flips status, as a manual override; (3) `recall-status-webhook` — a separate, project-wide webhook Recall calls on `bot.call_ended`/`bot.fatal`, requiring a one-time manual URL registration in Recall's dashboard — kept as a defense-in-depth backstop, not load-bearing since (1) covers the common case without any manual step. The board itself has to actively notice the flip too: it subscribes to `Session` realtime updates (plus a 3s poll fallback) while `isBotLive`, since nothing else in the open board would otherwise learn the status changed server-side. | Immediate — nothing to end |
 | Billing minutes | Utterance timestamp span (real AssemblyAI turn timings) | Utterance timestamp span (real Recall segment timings) | Utterance timestamp span (synthetic — `parseTranscript` assigns 1s/line, since pasted text has no real timing) |
 
 **Why Recall and not AssemblyAI for meetings:** Recall's bot is a call participant with its own transcription baked in — there's no separate STT vendor call to make on our side for meeting audio, and no way to run "hold to talk" against a call we're not producing audio into. AssemblyAI only ever sees the personal-mode browser mic stream.
@@ -53,22 +55,27 @@ These share the Tier-1/Tier-2 classification pipeline and the ops-log realtime d
 
 ## 2. Node taxonomy & identification logic
 
-### Node types
+### Node types (current, post-rename — table below reflects the shipped taxonomy, not the original draft)
 
 | Type | Meaning | Color direction | Lifecycle |
 |---|---|---|---|
+| Topic | Introduces/names a subject or section — a natural parent for the ideas/questions/risks under it | Teal | Static once created |
 | Idea | A proposal, suggestion, or possibility raised | Lavender | Static once created |
-| Fact | A stated, verifiable piece of information | Mint green | Static once created |
-| Opinion | A subjective view, preference, or reaction — distinct from Fact's verifiable claim | Pink | Static once created |
 | Question | Something raised but not yet answered | Amber, **dashed border while open** | Open → Resolved (solid border once answered) |
-| Decision | Something the group or person has committed to | Sky blue | Static once created |
-| Risk | A concern, blocker, or potential problem | Dusty red/coral | Open → Resolved (dashed while open, same pattern as Question) |
-| Action | A task or follow-up, with an owner if known | Gold/yellow | Open → Done |
-| Aside | A tangential or personal remark with some real content, but no analytical weight — not the same as true filler | Neutral gray, visually muted/recedes | Static once created |
+| Decision | A commitment being made *right now* — a live choice ("let's ship Friday"), not a recap of something already done — see the evidence distinction below | Sky blue | Static once created |
+| Risk | A concern, blocker, or potential problem | Coral | Open → Resolved (dashed while open, same pattern as Question) |
+| Action | A task or follow-up, with an owner if known | Gold | Open → Done |
+| Evidence | A stated, objective, verifiable fact or data point — **including a status report of something already fixed/working/done** ("the bug is fixed now"), which is evidence, not a decision | Mint | Static once created |
+| Opinion | A subjective view, preference, judgment, or reaction — distinct from Evidence's verifiability | Pink | Static once created |
+| Waffle | A tangential or personal remark with some real content, but no analytical weight — not the same as true filler | Muted gray, visually recedes | Static once created |
 
-This set can and should get tuned after real usage — it's a starting point, not gospel. Color always encodes type, never sequence.
+Color always encodes type, never sequence. This set is stable now, but tune further after real usage rather than treating it as gospel.
 
-**Aside vs. skip entirely:** true filler ("um," "okay," "let's see") should still be dropped by Tier 1, same as before — Aside is for utterances that have *some* content or reaction worth keeping even though they're off-topic or personal, not a catch-all for every stray sound. The classification prompt needs explicit guidance distinguishing these three buckets (analytical type / Aside / skip), not just two.
+**Waffle vs. skip entirely:** true filler ("um," "okay," "let's see") is dropped by Tier 1 — Waffle is for utterances that have *some* content or reaction worth keeping even though they're off-topic or personal, not a catch-all for every stray sound.
+
+**Decision vs. Evidence — the easiest of these to get wrong, and a real bug found in live meeting testing:** a status report ("we fixed the joining bug", "avatar now shows listening state") was landing as Decision, when nothing was actually being decided — the speaker was recapping already-completed work. Reserve Decision for a live commitment; a recap of what already happened is Evidence. Fixed in `TIER1_SYSTEM` with an explicit worked example (`base44/functions/process-session/entry.ts`).
+
+**Independent-branch over-eagerness — also found in live testing:** a trailing "that's amazing — I think we should also make the board more interactive" got classified as an independent root branch, purely because the specific topic shifted (bug-fixing → UI idea) — even though it was said in the same breath as a continuing conversation. Since every independent root stacks in the same leftmost layout column, this makes a late, related aside visually read as if it belongs with the very start of the session. Fixed with explicit guidance: "also"/"one more thing"/"I think we should also" signal a continuation to connect, not a hard pivot — independent is reserved for an explicit "switching gears" / "on a totally different note" moment.
 
 ### Classification pipeline — two tiers
 
@@ -132,7 +139,8 @@ If live Tier-1 placement isn't holding up reliably by demo time, batch-process t
 - **users** — id, email, name, role (user / admin), org_id, plan_id, created_at
 - **orgs** — id, name, plan_id, seats_used
 - **plans** — id, name, price_monthly, node_limit, session_limit, features[]
-- **sessions** — id, owner_user_id, org_id, type (personal / meeting), capture_source (mic_live / bot_live / import), title, meeting_url, bot_id (Recall's bot ID, null unless capture_source is bot_live), status (active / processing / complete), started_at, ended_at
+- **sessions** — id, owner_user_id, org_id, type (personal / meeting), capture_source (mic_live / bot_live / import), title, meeting_url, bot_id (Recall's bot ID, null unless capture_source is bot_live), status (active / processing / complete), started_at, ended_at, billed_ms (span of utterance timestamps — the plan-quota metric, same formula regardless of capture source), rating (1-5, nullable — post-meeting star rating), rating_feedback (optional free text, currently unused by the UI)
+- **app_config** — singleton row, admin-editable via `/admin/config`. Currently just `waitlist_mode` (bool) — when on, the onboarding modal shows a "still building this, free for now" note. RLS: public read (onboarding needs it pre-auth-context), admin-only write.
 - **utterances** — id, session_id, speaker_label, text, start_ms, end_ms, finalized
 - **nodes** — id, owner_user_id, session_id, type, title, summary, status (open / resolved / done / n-a), hidden (bool, default false — board-visibility toggle, separate from status; see delete/hide note below), provisional (bool, default false — true while still in the staged forming process described above, false once end_of_turn finalizes it), confidence, pos_x, pos_y (nullable — manual drag override, null means use the tree auto-layout), created_at, updated_at
 - **node_utterance_links** — node_id, utterance_id (raw-transcript backlink)
@@ -151,6 +159,9 @@ If live Tier-1 placement isn't holding up reliably by demo time, batch-process t
 ### Auth
 - Sign up / log in (Base44 auth)
 
+### Onboarding
+- Two-step modal shown once per account (localStorage-gated, not a User field — see the User-entity RLS gotcha below for why), mounted at `AppLayout` so it fires regardless of which page loads first. Step 1 "Meet Tackly": a small looping decorative animation of 3-5 mini node cards popping in and connecting (`src/components/OnboardingModal.jsx`, `NodePreview`), plus the waitlist-mode note when `AppConfig.waitlist_mode` is on. Step 2 "What you can do": Solo / Meetings / Transcripts / Export-anywhere (including markdown export for handing straight to an LLM).
+
 ### Main app
 - **Home ("your threads")** — list of past sessions, personal and meeting mixed or filterable, search bar up top
 - **New session** — three entry points: "Start talking" (personal, hold-to-talk), "Invite the bot" (paste a Zoom/Meet/Teams link — creates the session and board instantly, Recall bot joins, nodes populate live as the call happens), or "Import a transcript" (paste/upload a transcript from elsewhere)
@@ -160,9 +171,11 @@ If live Tier-1 placement isn't holding up reliably by demo time, batch-process t
 - **Settings** — profile, plan/billing
 
 ### Admin (role-gated, separate route)
-- **Dashboard home** — signups, active sessions, nodes created, MRR at a glance
-- **Users** — searchable table, view detail, change plan, disable account
-- **Plans/billing** — manage plan definitions, view subscriptions (Stripe via Base44 integration)
+- **Overview** — sessions (all-time + completed), meetings captured, average rating + star breakdown (from `admin-session-stats`, service-role since Session RLS is owner-scoped), usage-event counts
+- **Users** — searchable table, view detail, change plan (manual plan assignment, no Stripe checkout yet)
+- **Plans** — plan definitions (name, minute limit, meeting access)
+- **Emails** — preview the Resend-based transactional templates (welcome, quota-warning, plan-upgraded) with sample data, without sending anything
+- **Config** — app-wide settings; currently just the waitlist-mode toggle
 
 ---
 
@@ -194,8 +207,22 @@ This direction is a starting point for whoever builds the UI — worth running t
 
 ## 7. Open questions to confirm during build
 
-- ~~Plan/pricing tiers aren't decided yet~~ — **resolved**: Free (30 min/mo, personal only, no meetings), Plus (£10/mo, 300 min), Pro (£18/mo, 1000 min). Minutes = span of utterance timestamps, same formula for every capture source (see `base44/shared/billing.ts`). Payment collection (Stripe) and custom-branded transactional email (Resend, for signup/quota-warning type notifications — separate from Base44's own built-in OTP/reset emails, which aren't overridable) are still open — see HANDOVER-equivalent conversation notes for the pending decisions.
-- Node taxonomy (9 types now, `waffle` added) is still evolving — fine to adjust further after seeing real sessions mapped.
-- Recall's real-time transcript webhook (`recall-webhook`) is verified via the per-session `webhook_token` echoed back in `realtime_endpoints` metadata + the unguessable bot id — resolved. The separate bot status-change webhook (`recall-status-webhook`, for auto-detecting the meeting ending) uses real Svix HMAC signature verification instead, since status events aren't deliverable through `realtime_endpoints` — see 1a above. That endpoint still needs a one-time manual registration in Recall's dashboard (Webhooks tab) to get its signing secret.
-- Known bug as of the current build: nodes disappear whenever a new push-to-talk utterance is added (the transcript tab correctly keeps everything, only the node board loses prior nodes). This is almost certainly the symptom of a full-state overwrite happening somewhere — either the backend regenerating/upserting the whole node set per utterance instead of only adding what's new, or the frontend replacing its board state wholesale on each update instead of merging. Fixing the realtime delivery to match the ops-log pattern above should resolve this as a side effect, but verify directly: after the fix, push-to-talk twice in one session and confirm the first utterance's node(s) are still on the board after the second.
-- If live bot capture (Phase 4) turns out less reliable than expected under time pressure, fall back to the existing paste/import path for meetings rather than letting it block the rest of the build — same fallback logic as the personal-capture fallback above.
+- ~~Plan/pricing tiers aren't decided yet~~ — **resolved**: Free (30 min/mo, personal only, no meetings), Plus (£10/mo, 300 min), Pro (£18/mo, 1000 min). Minutes = span of utterance timestamps, same formula for every capture source (see `base44/shared/billing.ts`).
+- **Stripe checkout/webhook — still not built.** `STRIPE_SECRET_KEY` is set, plan is webhook-based (user provides the API secret + sets up a webhook, gives us the signing secret), domain is tackly.co. Not started as of this writing — admin manual plan assignment is the only way to change a user's plan today.
+- **Resend — minimally built.** `base44/shared/resend.ts` + `base44/shared/emailTemplates.ts` cover welcome/quota-warning/plan-upgraded templates, previewable at `/admin/emails`. Only the welcome email is actually wired to a trigger (fires client-side right after signup OTP verification, best-effort/fire-and-forget — there's no Base44 lifecycle hook for "user created" to hang this off server-side instead). quota-warning and plan-upgraded templates exist but aren't triggered by anything yet.
+- Recall's real-time transcript webhook (`recall-webhook`) is verified via the per-session `webhook_token` echoed back in `realtime_endpoints` metadata + the unguessable bot id, AND a real HMAC signature check against `RECALL_VERIF_SECRET` (soft-fail — logs on mismatch rather than rejecting, since the token check is the real security boundary and a signature-format bug must never be able to black out ingestion the way it briefly did — see §8). The separate bot status-change webhook (`recall-status-webhook`) still needs a one-time manual URL registration in Recall's dashboard to be useful at all, but is no longer load-bearing for auto-finalizing a meeting — see 1a.
+- Node taxonomy (9 types) is stable for now; the Decision-vs-Evidence and independent-branch-bias fixes in §2 came directly from reading a real meeting transcript against its resulting board, which is the right way to keep tuning this — read real transcripts next to their boards, don't guess.
+- Onboarding modal (see §4) and waitlist-mode toggle are built and live. Onboarding "seen" state is localStorage-only, not persisted server-side — a user onboarding on a second device will see it again. Fixing this properly means writing a flag onto the user's own User record, which needs a dedicated backend function rather than a direct frontend `entities.User.update()` call — the User entity's custom RLS (added for admin plan-assignment) only grants admin read/update, not even self-access, so a user can no longer write their own record directly the way Base44's reserved User entity normally allows.
+
+---
+
+## 8. Reliability lessons from real meeting testing (worth reading before touching the Recall integration again)
+
+Meeting capture looked done after the initial build but was actually silently broken end-to-end; live testing against a real Google Meet call is what surfaced each of these, in order:
+
+1. **The webhook URL registered with Recall was never reachable.** It was built from `new URL(req.url).origin` inside the Base44 function — but `req.url` inside a Base44 function is always the internal dispatcher address (`base44-dispatcher-production.base44.workers.dev/run/<id>`), never a public one. Every webhook delivery for an entire meeting silently 404'd. Confirmed by deploying a throwaway function that echoed `req.url`/headers back and curling it directly. Fixed by hardcoding the real public domain (`https://tackly.co`) rather than trying to derive it — a `base44-api-url` request header looked promising as a fix but is *also* wrong, because the frontend SDK's default `serverUrl` is a bare `https://base44.app` regardless of what domain the page is actually served from, and that bare host 404s without the app-ID path the SDK uses internally. Lesson: don't try to self-infer a function's public URL from anything request-derived — hardcode the known-good domain.
+2. **An uncaught exception in signature verification was 500ing every single webhook delivery.** Once the URL was fixed, deliveries were reaching us (confirmed via logging) but produced zero utterances. Root cause: `atob()` on the verification secret threw `invalid base64-encoded data`, uncaught, which crashed the whole request handler before it ever reached the utterance-creation code — Recall's dashboard showed this as a plain HTTP 500 per delivery. Fixed by wrapping verification in its own try/catch (soft-fail: log and continue rather than reject) and hardening the base64 decode to tolerate URL-safe alphabet/whitespace. Lesson: a "bonus" security layer must never be able to take down the primary data path on a crash — verify defensively, fail open with logging, not closed with a silent 500.
+3. **Real-time transcription defaults to `prioritize_accuracy` mode, not low latency.** This produced a genuine ~30s lag between speech and the node appearing, which read as "broken" even though data was flowing correctly. Recall's docs confirm `prioritize_low_latency` mode targets 1-3s webhook updates instead. Fixed in `recording_config.transcript.provider.recallai_streaming.mode`. Note: this only affects *newly created* bots — an already-running bot keeps whatever mode it started with, so testing a mode change requires ending the session and starting a fresh meeting, not rejoining the same one.
+4. **The board never re-checked the Session record while a meeting was live.** Even a correct server-side status flip (bot leaving, quota hit, anything) would sit unnoticed indefinitely, because nothing was polling or subscribing to the Session entity itself — only Utterance creates were being watched. Fixed with a realtime `Session.subscribe` + 3s poll fallback while `isBotLive` (same defensive pattern as the utterance ingestion: subscribe for speed, poll because service-role writes can lag on realtime delivery).
+
+None of these would have been caught by code review alone — each needed a real bot in a real call, checked against actual function logs (`npx base44 logs --env preview`), not assumptions about what "should" be happening. Diagnostic pattern that worked well: add a `console.log` at the very top of the handler before anything else executes, deploy, generate one real event, and confirm from the logs whether the function is even being reached before debugging anything downstream.

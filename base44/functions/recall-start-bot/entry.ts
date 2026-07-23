@@ -87,13 +87,24 @@ Deno.serve(async (req) => {
         bot_name: "Tackly.co",
         recording_config: {
           transcript: {
-            provider: { recallai_streaming: {} },
+            // Default provider mode is "prioritize_accuracy", which uses
+            // async/batched processing and can lag ~30s behind real speech —
+            // that's the delay reported live. "prioritize_low_latency" trades
+            // a little accuracy for updates every 1-3s, matching mic capture.
+            provider: {
+              recallai_streaming: { mode: "prioritize_low_latency", language_code: "en" },
+            },
           },
           realtime_endpoints: [
             {
               type: "webhook",
               url: webhookUrl,
-              events: ["transcript.data"],
+              // participant_events.leave lets recall-webhook auto-finalize the
+              // session when the host leaves — no manual Recall-dashboard
+              // webhook registration required (unlike the bot.call_ended /
+              // bot.fatal status events, which only ship via that separate,
+              // manually-configured mechanism).
+              events: ["transcript.data", "participant_events.leave"],
               metadata: { token: webhookToken, session_id: session.id },
             },
           ],

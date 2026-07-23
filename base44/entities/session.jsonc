@@ -68,6 +68,16 @@
       "default": 0,
       "minimum": 0,
       "description": "Transcript minutes (in ms) this session counts against the owner's monthly quota — the span of utterance timestamps, computed once when the session completes. Same metric regardless of capture source (mic, bot, or import)."
+    },
+    "rating": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Owner's post-session star rating (1-5), prompted once when a meeting session completes."
+    },
+    "rating_feedback": {
+      "type": "string",
+      "description": "Optional free-text feedback given alongside the rating."
     }
   },
   "required": ["type", "title"],

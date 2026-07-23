@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
-import { Activity, DollarSign, StickyNote, UserPlus } from "lucide-react";
+import { Activity, DollarSign, Star, StickyNote, UserPlus } from "lucide-react";
 
 function StatTile({ icon: Icon, label, value, hint }) {
   return (
@@ -17,6 +17,7 @@ function StatTile({ icon: Icon, label, value, hint }) {
 
 export default function Overview() {
   const [events, setEvents] = useState(null);
+  const [stats, setStats] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,6 +29,10 @@ export default function Overview() {
         if (!cancelled) setEvents([]);
       }
     })();
+    base44.functions
+      .invoke("admin-session-stats", {})
+      .then((res) => !cancelled && setStats(res.data))
+      .catch(() => !cancelled && setStats(null));
     return () => {
       cancelled = true;
     };
@@ -70,6 +75,51 @@ export default function Overview() {
           hint="Wired up with billing"
         />
       </div>
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile
+          icon={Activity}
+          label="Sessions (all-time)"
+          value={stats ? stats.total_sessions : "—"}
+          hint={stats ? `${stats.completed_sessions} completed` : "Loading…"}
+        />
+        <StatTile
+          icon={Activity}
+          label="Meetings captured"
+          value={stats ? stats.by_capture_source.bot_live : "—"}
+          hint="capture_source = bot_live"
+        />
+        <StatTile
+          icon={Star}
+          label="Avg. rating"
+          value={stats?.avg_rating != null ? `${stats.avg_rating} / 5` : "—"}
+          hint={stats ? `${stats.rating_count} ratings given` : "Loading…"}
+        />
+      </div>
+
+      {stats && stats.rating_count > 0 && (
+        <div className="mt-4 rounded-2xl border border-line bg-paper-raised p-5 shadow-note">
+          <p className="text-sm font-medium text-ink-soft">Rating breakdown</p>
+          <div className="mt-3 space-y-1.5">
+            {[5, 4, 3, 2, 1].map((n) => {
+              const c = stats.rating_breakdown[n] || 0;
+              const pct = stats.rating_count ? (c / stats.rating_count) * 100 : 0;
+              return (
+                <div key={n} className="flex items-center gap-2 text-xs text-ink-soft">
+                  <span className="w-8 shrink-0">{n}★</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-paper-sunken">
+                    <div
+                      className="h-full rounded-full bg-note-gold-edge"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="w-6 shrink-0 text-right">{c}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="mt-8 rounded-2xl border border-dashed border-line p-8 text-center text-sm text-ink-soft">
         Charts and recent activity land here once real sessions start flowing.
       </div>

@@ -103,6 +103,11 @@ Deno.serve(async (req) => {
     const { data: result } = await reasonForJson({
       client: makeAnthropic(),
       model: TIER2_MODEL,
+      // Bounded down from the shared default (12000): this call was the
+      // single biggest contributor to the "Linking ideas…" wait feeling
+      // stuck on session end — merges/edges for a normal session's node
+      // count don't need the full adaptive ceiling.
+      maxTokens: 6000,
       system: TIER2_SYSTEM,
       user: buildUserPrompt(
         nodes.map((n) => ({

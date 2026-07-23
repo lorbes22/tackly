@@ -7,6 +7,7 @@ import { NodeCard } from "@/components/NodeCard";
 import { EdgeLayer } from "@/components/EdgeLayer";
 import { NodeDetailPanel } from "@/components/NodeDetailPanel";
 import { MicBar, BotBar, LiveUtteranceFeed } from "@/components/LiveBars";
+import { RatingModal } from "@/components/RatingModal";
 import { usePanZoom } from "@/lib/usePanZoom";
 import { computeLayout } from "@/lib/treeLayout";
 import { boardToSvg, boardToMarkdown, exportPng, exportSvg, exportMarkdown } from "@/lib/boardExport";
@@ -56,6 +57,7 @@ export default function Board() {
   const [notFound, setNotFound] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [focusNotes, setFocusNotes] = useState(false);
+  const [showRating, setShowRating] = useState(false);
   // Nodes/edges present at first load render statically; later ones animate
   const initialNodeIds = useRef(null);
   const initialEdgeIds = useRef(null);
@@ -419,6 +421,28 @@ export default function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isBotLive, sessionId, liveProcess]);
 
+  // Bot sessions: also watch the Session record itself. The bot leaving the
+  // call (host-leave webhook) or Recall's status webhook flips status to
+  // "processing" server-side — nothing else in the open board would ever
+  // notice that and move off "bot is joining/listening" otherwise. Realtime
+  // subscribe for an instant flip, 3s poll as a fallback (same pattern as
+  // the utterance ingestion above — service-role writes can lag on realtime).
+  useEffect(() => {
+    if (!isBotLive) return;
+    const unsub = Session.subscribe((event) => {
+      if (event.type === "update" && event.id === sessionId) {
+        setSession((prev) => (prev ? { ...prev, ...event.data } : prev));
+      }
+    });
+    const poll = setInterval(() => {
+      refreshSession().catch(() => {});
+    }, 3000);
+    return () => {
+      unsub();
+      clearInterval(poll);
+    };
+  }, [isBotLive, sessionId, refreshSession]);
+
   // Mic sessions: staged provisional nodes (PLAN.md).
   // Stage 1 — instant raw placeholder (no LLM) on the first partial words.
   // Stage 2 — debounced classify-partial rough guess (settles early ~90%).
@@ -615,6 +639,45 @@ export default function Board() {
       stopped = true;
     };
   }, [session, sessionId, refreshSession]);
+
+  // Post-meeting rating prompt — once per session, only for bot (meeting)
+  // capture, only after it's actually finished processing and not already
+  // rated. sessionStorage remembers a dismiss so reopening the board later
+  // doesn't nag again; an actual rating is permanent on the Session record.
+  useEffect(() => {
+    if (!session || session.capture_source !== "bot_live") return;
+    if (session.status !== "complete" || session.rating != null) return;
+    const dismissKey = `tackly:rating-dismissed:${sessionId}`;
+    if (sessionStorage.getItem(dismissKey)) return;
+    setShowRating(true);
+  }, [session, sessionId]);
+
+  const ratingCounts = useMemo(() => {
+    const count = (type) => nodes.filter((n) => !n.hidden && n.type === type).length;
+    return {
+      ideas: count("idea"),
+      decisions: count("decision"),
+      questions: count("question"),
+      actions: count("action"),
+    };
+  }, [nodes]);
+
+  const submitRating = useCallback(
+    async (rating) => {
+      try {
+        await Session.update(sessionId, { rating });
+      } catch {
+        // rating is a nice-to-have, never block the board on it
+      }
+      setTimeout(() => setShowRating(false), 1400);
+    },
+    [sessionId]
+  );
+
+  const dismissRating = useCallback(() => {
+    sessionStorage.setItem(`tackly:rating-dismissed:${sessionId}`, "1");
+    setShowRating(false);
+  }, [sessionId]);
 
   const selectNode = useCallback(
     (id) => {
@@ -988,6 +1051,9 @@ export default function Board() {
             <Mic className="h-4 w-4" />
             Continue this thread by voice
           </button>
+        )}
+        {showRating && (
+          <RatingModal counts={ratingCounts} onSubmit={submitRating} onDismiss={dismissRating} />
         )}
 
         {/* Right panel: node detail wins over transcript */}

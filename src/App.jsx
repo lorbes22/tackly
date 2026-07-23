@@ -17,6 +17,7 @@ import Overview from "@/pages/admin/Overview";
 import UsersPage from "@/pages/admin/UsersPage";
 import PlansPage from "@/pages/admin/PlansPage";
 import EmailsPage from "@/pages/admin/EmailsPage";
+import ConfigPage from "@/pages/admin/ConfigPage";
 
 export default function App() {
   return (
@@ -65,6 +66,7 @@ export default function App() {
             <Route path="users" element={<UsersPage />} />
             <Route path="plans" element={<PlansPage />} />
             <Route path="emails" element={<EmailsPage />} />
+            <Route path="config" element={<ConfigPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

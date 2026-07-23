@@ -101,10 +101,10 @@ Analytical node types (real substance worth mapping):
 - topic: introduces, names, or frames a subject/section of the discussion — especially useful when the speaker announces something like "we have two ideas" or "let's talk about X" before getting into specifics. A topic is a natural PARENT for the ideas/questions/risks that follow under it.
 - idea: a proposal, suggestion, or possibility raised
 - question: something raised but not yet answered
-- decision: something the group or person has committed to
+- decision: a commitment being MADE right now — a choice the group or person is settling on going forward ("let's ship Friday", "we'll use Postgres"). If it's reporting that something already happened or already got fixed, it's evidence, not a decision — see the worked example below.
 - risk: a concern, blocker, or potential problem
 - action: a task or follow-up, with an owner if known
-- evidence: a stated, objective, verifiable fact or data point
+- evidence: a stated, objective, verifiable fact or data point — including a status report of something already done, fixed, working, or resolved ("the login bug is fixed now", "we're getting real-time data now"). These are facts about the current state, not a decision being made in the moment.
 - opinion: a subjective view, preference, judgment, or reaction — distinct from evidence, which is verifiable. "I think X is better" is opinion; "X shipped in March" is evidence.
 
 One non-analytical type:
@@ -134,6 +134,7 @@ CONNECTING NODES — this is the heart of the board. Every "new" decision needs 
 - INDEPENDENT BRANCH: set "parent" to the exact string "independent" only when the thought moves to a genuinely different SUBJECT — the topic itself changes (was discussing onboarding, now discussing hiring; "on a different note", "switching topics", "unrelated, but"). A session can have several independent root branches for genuinely different subjects — that is correct and expected.
 - The very first node of the session is always "independent" (nothing to connect to yet).
 - IMPORTANT — "second idea", "another idea", "alternatively", "or instead" about the SAME subject are NOT independent. They are alternatives/siblings within the same discussion: connect them (to the topic/node that introduced them, or to the sibling they're an alternative to). Two competing ideas for the same problem belong on the same branch, not separate roots.
+- IMPORTANT — "also", "I think we should also", "one more thing" introducing a NEW but related thought at the end of a discussion are continuations, not independent branches — connect to whatever was just being discussed. Independent is reserved for an explicit hard pivot ("switching gears", "on a completely different note", "unrelated, but") to a genuinely different subject, not for a closing thought prompted by the conversation that was just happening.
 - Do NOT force a connection you don't believe onto an unrelated subject — but do NOT split one continuous discussion into isolated roots either. When in doubt within the same topic, connect.
 - When you connect, pick the SINGLE most relevant parent. A risk about idea A parents to idea A, not idea B or the latest node. A thought that CONTINUES the immediately preceding one (across a pause) attaches to that same node — see the recent-context utterances.
 - "relation" (only when connecting) — pick the one that best describes how the child relates to its parent:
@@ -188,6 +189,18 @@ Example: evidence vs. opinion, same topic, back to back.
 Utterance A: "Activation dropped to 34% last month." → evidence (a stated, checkable number — no hedge word, no judgment).
 Utterance B: "I think that's because onboarding is too long." → opinion (a causal claim the speaker believes, not a verified fact — "I think" is the signal, but even without it, an unverified causal claim about WHY something happened is opinion, not evidence).
 Utterance C: "The onboarding flow has 7 screens." → evidence again (a countable, checkable fact, back to objective ground).
+
+Example: decision vs. evidence — a status report is NOT a decision.
+Utterance: "So we've fixed two issues from before — the meeting bot wasn't joining, that's fixed now, and we've also changed the avatar so it shows when it's listening."
+Correct decisions (all evidence, not decision):
+1. new, type=evidence, title="Bot-not-joining issue fixed", relation/parent per context
+2. new, type=evidence, title="Avatar now shows listening state", relation/parent per context
+Why evidence, not decision: nothing is being decided here — the speaker is reporting completed work as a fact. Reserve "decision" for a live commitment ("let's fix the joining bug by switching providers"), not a recap of what already got done.
+
+Example: a trailing "we should also" is usually a continuation, not an independent branch.
+Existing nodes: id=t1 topic "Fixing today's bugs", id=e1 evidence "Real-time transcripts now working" (parent t1).
+Utterance: "That's amazing — I think we should also make the board a bit more interactive so it feels like something's happening."
+Correct: new, type=idea, title="Make the board more interactive", parent=e1 (or t1), relation="leads_to". The word "also" signals this is an addition to the SAME live conversation (a wrap-up thought prompted by what was just said), not a pivot to an unrelated subject — don't send it to "independent" just because the specific topic label (interactivity vs. bug-fixing) differs. Independent is for a genuine hard pivot ("switching gears entirely", "on a totally different note"), not for the natural next thought in a flowing discussion.
 
 Example: waffle vs. skip — both look like "nothing important" but only one has content worth a node.
 "Okay, so—" / "right, right" / "let's see" → SKIP, pure filler, no node at all.

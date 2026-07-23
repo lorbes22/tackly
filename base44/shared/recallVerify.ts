@@ -5,6 +5,18 @@
 // Standard Webhooks spec (same algorithm Svix implements): headers
 // webhook-id / webhook-timestamp / webhook-signature, HMAC-SHA256 over
 // "<id>.<timestamp>.<body>", secret prefixed "whsec_".
+// Tolerates URL-safe base64 (- / _ instead of + /) and missing padding —
+// a raw `atob()` on the secret threw "invalid base64-encoded data" in
+// production even though the secret looked fine, which silently crashed
+// the whole handler before this was wrapped in try/catch upstream.
+function toStandardBase64(s: string): string {
+  let out = s.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = out.length % 4;
+  if (pad === 2) out += "==";
+  else if (pad === 3) out += "=";
+  return out;
+}
+
 export async function verifyRecallSignature(
   secret: string,
   req: Request,
@@ -15,9 +27,12 @@ export async function verifyRecallSignature(
   const signatureHeader = req.headers.get("webhook-signature");
   if (!msgId || !msgTimestamp || !signatureHeader) return false;
 
-  const secretBytes = secret.startsWith("whsec_")
-    ? Uint8Array.from(atob(secret.slice("whsec_".length)), (c) => c.charCodeAt(0))
-    : new TextEncoder().encode(secret);
+  const trimmed = secret.trim();
+  const secretBytes = trimmed.startsWith("whsec_")
+    ? Uint8Array.from(atob(toStandardBase64(trimmed.slice("whsec_".length))), (c) =>
+        c.charCodeAt(0),
+      )
+    : new TextEncoder().encode(trimmed);
 
   const key = await crypto.subtle.importKey(
     "raw",

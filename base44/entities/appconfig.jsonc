@@ -1,0 +1,17 @@
+{
+  "name": "AppConfig",
+  "type": "object",
+  "properties": {
+    "waitlist_mode": {
+      "type": "boolean",
+      "default": true,
+      "description": "When on, onboarding shows a note that Tackly is still being built and free for now. Singleton row — the app reads whichever row exists first."
+    }
+  },
+  "rls": {
+    "create": { "user_condition": { "role": "admin" } },
+    "read": true,
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

@@ -1,6 +1,9 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { Logo } from "@/components/Logo";
 import { useAuth } from "@/lib/AuthContext";
+import { base44 } from "@/api/base44Client";
+import { OnboardingModal } from "@/components/OnboardingModal";
 import { LayoutGrid, LogOut, Plus, Search, Settings, Shield } from "lucide-react";
 
 function TopNavLink({ to, end, icon: Icon, label }) {
@@ -25,6 +28,23 @@ function TopNavLink({ to, end, icon: Icon, label }) {
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [waitlistMode, setWaitlistMode] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    const seenKey = `tackly:onboarding-seen:${user.id}`;
+    if (localStorage.getItem(seenKey)) return;
+    base44.entities.AppConfig.list()
+      .then((rows) => setWaitlistMode(rows[0]?.waitlist_mode ?? false))
+      .catch(() => {})
+      .finally(() => setShowOnboarding(true));
+  }, [user]);
+
+  const dismissOnboarding = () => {
+    if (user) localStorage.setItem(`tackly:onboarding-seen:${user.id}`, "1");
+    setShowOnboarding(false);
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
@@ -56,6 +76,9 @@ export default function AppLayout() {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
         <Outlet />
       </main>
+      {showOnboarding && (
+        <OnboardingModal waitlistMode={waitlistMode} onDone={dismissOnboarding} />
+      )}
     </div>
   );
 }
