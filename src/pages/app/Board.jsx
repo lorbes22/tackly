@@ -49,6 +49,7 @@ export default function Board() {
   const [phase, setPhase] = useState(null); // null | "mapping" | "linking"
   const [notFound, setNotFound] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [focusNotes, setFocusNotes] = useState(false);
   // Nodes/edges present at first load render statically; later ones animate
   const initialNodeIds = useRef(null);
   const initialEdgeIds = useRef(null);
@@ -780,6 +781,11 @@ export default function Board() {
                     noteCount={noteCounts[node.id] || 0}
                     animate={initialNodeIds.current && !initialNodeIds.current.has(node.id)}
                     className={selectedId === node.id ? "shadow-brutal-lg ring-2 ring-periwinkle" : ""}
+                    onNotesClick={(id) => {
+                      setShowTranscript(false);
+                      setFocusNotes(true);
+                      setSelectedId(id);
+                    }}
                     onClick={() => {
                       // Suppress the click that follows a drag
                       if (draggedRef.current) {
@@ -787,6 +793,7 @@ export default function Board() {
                         return;
                       }
                       setShowTranscript(false);
+                      setFocusNotes(false);
                       setSelectedId((cur) => (cur === node.id ? null : node.id));
                     }}
                   />
@@ -859,7 +866,11 @@ export default function Board() {
               edges={edges}
               utterances={utterances}
               noteCount={noteCounts[selectedNode.id] || 0}
-              onClose={() => setSelectedId(null)}
+              focusNotes={focusNotes}
+              onClose={() => {
+                setSelectedId(null);
+                setFocusNotes(false);
+              }}
               onSelectNode={selectNode}
               onStatusChange={applyStatus}
               onAddNote={addNote}

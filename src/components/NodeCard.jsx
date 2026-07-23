@@ -23,7 +23,7 @@ const STATUS_LABELS = {
 };
 
 export const NodeCard = forwardRef(function NodeCard(
-  { node, onClick, animate = false, className = "", noteCount = 0 },
+  { node, onClick, onNotesClick, animate = false, className = "", noteCount = 0 },
   ref
 ) {
   const style = NODE_TYPE_STYLES[node.type] || NODE_TYPE_STYLES.idea;
@@ -44,8 +44,15 @@ export const NodeCard = forwardRef(function NodeCard(
     >
       {noteCount > 0 && (
         <span
-          className="absolute -right-2 -top-2 flex h-6 items-center gap-1 rounded-full border-2 border-ink bg-paper-raised px-1.5 text-[10px] font-bold text-ink opacity-0 shadow-brutal-sm transition-opacity group-hover/node:opacity-100"
+          role="button"
+          tabIndex={0}
           title={`${noteCount} ${noteCount === 1 ? "note" : "notes"}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onNotesClick?.(node.id);
+          }}
+          className="absolute -right-2 -top-2 flex h-6 cursor-pointer items-center gap-1 rounded-full border-2 border-ink bg-note-gold px-1.5 text-[10px] font-bold text-ink shadow-brutal-sm transition-transform hover:-translate-y-0.5"
         >
           <StickyNote className="h-3 w-3" />
           {noteCount}
