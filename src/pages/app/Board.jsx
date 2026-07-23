@@ -174,8 +174,11 @@ export default function Board() {
   }, [nodes]);
 
   // Live capture: incrementally classify as utterances arrive, without
-  // completing the session (process-session leaves "active" sessions open)
+  // completing the session (process-session leaves "active" sessions open).
+  // Short debounce only coalesces near-simultaneous turns — kept low so the
+  // first node appears fast (the ~2s InvokeLLM is the real floor, not this).
   const kickTimerRef = useRef(null);
+  const sinceConsolidateRef = useRef(0);
   const kickProcessing = useCallback(() => {
     clearTimeout(kickTimerRef.current);
     kickTimerRef.current = setTimeout(async () => {
@@ -191,6 +194,18 @@ export default function Board() {
             session_id: sessionId,
           });
           if (res.data?.done) break;
+          sinceConsolidateRef.current += res.data?.processed ?? 0;
+        }
+        // Periodic live Tier-2 (PLAN.md: consolidation was only running at
+        // wrap-up, never on an interval — a cause of too-sparse connections).
+        // Catches longer-distance links + merges Tier-1's per-utterance view
+        // misses. Emits its own ops; board applies them like any other.
+        if (sinceConsolidateRef.current >= 5) {
+          sinceConsolidateRef.current = 0;
+          setPhase("linking");
+          base44.functions
+            .invoke("consolidate-session", { session_id: sessionId })
+            .catch(() => {});
         }
       } catch {
         // transient — next utterance retriggers
@@ -199,7 +214,7 @@ export default function Board() {
         setPhase(null);
         setUtterances((prev) => prev.map((u) => ({ ...u, processed: true })));
       }
-    }, 1200);
+    }, 300);
   }, [sessionId]);
 
   const isLive = session?.status === "active";

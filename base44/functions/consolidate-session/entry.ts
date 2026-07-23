@@ -50,6 +50,10 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Session not found" }, { status: 404 });
     }
 
+    // Live (active) sessions can be consolidated repeatedly on an interval;
+    // only the final wrap-up pass stamps consolidated_at, so the end-of-session
+    // consolidation still fires once regardless of how many live passes ran.
+    const isLive = session.status === "active";
     const nodes = await base44.entities.Node.filter(
       { session_id },
       "created_date",
@@ -57,9 +61,11 @@ Deno.serve(async (req) => {
     );
 
     if (nodes.length < 2) {
-      await base44.entities.Session.update(session_id, {
-        consolidated_at: new Date().toISOString(),
-      });
+      if (!isLive) {
+        await base44.entities.Session.update(session_id, {
+          consolidated_at: new Date().toISOString(),
+        });
+      }
       return Response.json({ merged: 0, edges_created: 0 });
     }
 
@@ -220,9 +226,11 @@ Deno.serve(async (req) => {
       await base44.entities.UsageEvent.bulkCreate(events);
     }
 
-    await base44.entities.Session.update(session_id, {
-      consolidated_at: new Date().toISOString(),
-    });
+    if (!isLive) {
+      await base44.entities.Session.update(session_id, {
+        consolidated_at: new Date().toISOString(),
+      });
+    }
 
     return Response.json({ merged, edges_created: edgesCreated });
   } catch (error) {
