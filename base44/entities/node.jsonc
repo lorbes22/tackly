@@ -10,6 +10,10 @@
       "type": "string",
       "description": "Session in which this node was created"
     },
+    "parent_id": {
+      "type": "string",
+      "description": "The node this one flows from (its single connector parent). Null for the session's root node. Drives the connected-flow tree layout."
+    },
     "type": {
       "type": "string",
       "enum": ["idea", "fact", "opinion", "question", "decision", "risk", "action", "aside"],

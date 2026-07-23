@@ -156,6 +156,13 @@ Deno.serve(async (req) => {
           }
         }
       }
+      // Re-parent any children of the removed node onto the kept one so the
+      // connected-flow tree never orphans a branch.
+      for (const child of nodes) {
+        if (child.parent_id === m.remove_id && child.id !== m.keep_id) {
+          await base44.entities.Node.update(child.id, { parent_id: m.keep_id });
+        }
+      }
       await base44.entities.Node.delete(m.remove_id);
       removedTo.set(m.remove_id, m.keep_id);
       merged++;

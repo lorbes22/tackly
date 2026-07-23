@@ -294,7 +294,7 @@ export default function Board() {
         setPhase(null);
         setUtterances((prev) => prev.map((u) => ({ ...u, processed: true })));
       }
-    }, 300);
+    }, 150);
   }, [sessionId]);
 
   const isLive = session?.status === "active";

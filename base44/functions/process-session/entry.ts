@@ -14,42 +14,63 @@ const TIER1_MODEL = "claude-haiku-4-5-20251001";
 const IMPORT_BATCH_SIZE = 12;
 const NODE_TYPES = ["idea", "fact", "opinion", "question", "decision", "risk", "action", "aside"];
 const OPEN_STATUS_TYPES = new Set(["question", "risk", "action"]);
-const RELATIONS = ["expands", "answers", "blocks", "relates_to"];
+// leads_to is the general "one thought followed from another" flow — the
+// default connective tissue of a thinking session.
+const RELATIONS = ["leads_to", "expands", "answers", "blocks", "relates_to"];
 
-// Layout rule (PLAN.md): first node centers; unrelated nodes extend rightward
-// from the current rightmost node; a node connected to an existing node stacks
-// ABOVE it instead of continuing the horizontal line.
-const CENTER_X = 1088;
-const CENTER_Y = 740;
-const H_GAP = 300; // horizontal step for unrelated nodes
-const V_GAP = 172; // vertical step when stacking above an anchor
-const COL_TOL = 130; // x-distance treated as "same column"
+// Connected-flow layout: the board is a top-down tree. The first node sits near
+// top-center (the root); every other node hangs BELOW its parent. Siblings
+// stack under one another; collisions fan out sideways then down. Existing
+// nodes never move — each new node just finds the nearest free slot below its
+// parent, so the map grows without anything jumping around.
+const ROOT_X = 1000;
+const ROOT_Y = 240;
+const STEP_Y = 200; // vertical gap parent -> child row
+const STEP_X = 280; // horizontal gap between siblings/columns
+const CLR_X = 250; // min horizontal clearance between cards
+const CLR_Y = 165; // min vertical clearance between cards
 
-type Placed = { id: string; x: number; y: number };
+type Placed = { id: string; x: number; y: number; parent_id: string | null };
 
-function placeNode(placed: Placed[], anchorId: string | null) {
-  const jitter = () => Math.random() * 24 - 12;
+function placeNode(placed: Placed[], parentId: string | null) {
   const rotation_deg = Math.round((Math.random() * 5 - 2.5) * 10) / 10;
 
-  if (placed.length === 0) {
-    return { position_x: CENTER_X, position_y: CENTER_Y, rotation_deg };
+  // Root (first node, or a node the model didn't connect) sits near top-center,
+  // offset a little if that exact spot is taken.
+  if (!parentId || !placed.some((p) => p.id === parentId)) {
+    let x = ROOT_X;
+    const y = ROOT_Y;
+    while (placed.some((p) => Math.abs(p.x - x) < CLR_X && Math.abs(p.y - y) < CLR_Y)) {
+      x += STEP_X;
+    }
+    return { position_x: x, position_y: y, rotation_deg };
   }
-  if (anchorId) {
-    const anchor = placed.find((p) => p.id === anchorId);
-    if (anchor) {
-      // Stack above the topmost card already in the anchor's column
-      const column = placed.filter((p) => Math.abs(p.x - anchor.x) < COL_TOL);
-      const topY = Math.min(...column.map((p) => p.y));
-      return {
-        position_x: anchor.x + jitter(),
-        position_y: topY - V_GAP,
-        rotation_deg,
-      };
+
+  const parent = placed.find((p) => p.id === parentId)!;
+  // Stack under the parent's most recent child if it has one, else under the
+  // parent itself — so siblings form a vertical run.
+  const children = placed.filter((p) => p.parent_id === parentId);
+  const anchor = children.length ? children[children.length - 1] : parent;
+  const baseX = anchor.x;
+  const baseY = anchor.y + STEP_Y;
+
+  const fits = (x: number, y: number) =>
+    !placed.some((p) => Math.abs(p.x - x) < CLR_X && Math.abs(p.y - y) < CLR_Y);
+
+  // Prefer directly below the anchor; then fan sideways; then step down a row.
+  for (let row = 0; row < 12; row++) {
+    const y = baseY + row * STEP_Y;
+    if (fits(baseX, y)) return { position_x: baseX, position_y: y, rotation_deg };
+    for (let k = 1; k <= 6; k++) {
+      if (fits(baseX + k * STEP_X, y)) {
+        return { position_x: baseX + k * STEP_X, position_y: y, rotation_deg };
+      }
+      if (fits(baseX - k * STEP_X, y)) {
+        return { position_x: baseX - k * STEP_X, position_y: y, rotation_deg };
+      }
     }
   }
-  // Unrelated → to the right of the current rightmost node, on the baseline row
-  const maxX = Math.max(...placed.map((p) => p.x));
-  return { position_x: maxX + H_GAP + jitter(), position_y: CENTER_Y, rotation_deg };
+  return { position_x: baseX, position_y: baseY, rotation_deg };
 }
 
 // Static across every utterance → cached. Contains no per-call data, so the
@@ -71,7 +92,7 @@ One non-analytical type:
 
 For EACH utterance index, decide exactly one action. First choose the bucket:
 1. SKIP — true filler with no content: "um", "okay", "let's see", "right", greetings, acknowledgements, dead air. Drop these entirely.
-2. ASIDE — has some content or a genuine reaction but is off-topic or personal, no analytical weight ("ha, my coffee's gone cold", "this reminds me of my last job"). Keep as an "aside"-type node.
+2. ASIDE — has some content or a genuine reaction but is off-topic or personal, no analytical weight ("ha, my coffee's gone cold", "this reminds me of my last job"). Also a meta-remark about the session or the speaker's state ("just trying this out, not sure how it works", "let me think out loud here", "not sure where to start") — keep these as aside nodes; an opening one often becomes the root the whole session flows from. Keep as an "aside"-type node.
 3. ANALYTICAL — real substance: classify into one of the analytical types above.
 
 Then the action:
@@ -86,12 +107,16 @@ Rules:
 - For action nodes, put the owner in the title when stated (e.g. "Maya: draft launch email").
 - A single utterance containing several distinct thoughts should still produce only its single strongest node.
 
-ALSO return "edges": connections between a node you are creating THIS turn and an existing node (or another new one from this turn). Look actively for these — a good map is richly connected, and noticing that a new thought relates to something said earlier is the whole point. Relations:
-- "answers": a fact/decision/idea/opinion that answers an open question
-- "blocks": a risk that threatens a decision/action/idea
-- "expands": builds on or adds detail to another node
-- "relates_to": a strong thematic link that isn't one of the above
-Reference nodes by "from" and "to": use an existing node's id, or "new:N" to reference the node created by decision index N this turn. Only propose edges you're genuinely confident about, but don't be stingy — err toward surfacing a real connection over missing it. No self-edges, no duplicates of edges already implied by the existing map.`;
+CONNECTING NODES — this is the heart of the board. Every new node connects to exactly ONE parent: the existing node (or another node you create earlier this same turn) that this thought most directly follows from or relates to. The board is one connected flow of thought — never leave a new node unconnected.
+- Set "parent" to that node's id, or "new:N" to reference the node created by decision index N this turn.
+- The VERY FIRST node of the whole session (when there are no existing nodes and it's the first "new" this turn) has no parent — leave "parent" empty. Every later node MUST have a parent.
+- Pick the SINGLE most relevant parent. If someone raises a risk about idea 1, its parent is idea 1 — not idea 2, not the most recent node. If a second idea follows the first, its parent is whatever it flows from (often the first idea, or the topic that introduced both).
+- Choose "relation" for how it connects to its parent:
+  - "leads_to": one thought naturally followed from / was prompted by the parent (the common case in a flowing conversation)
+  - "expands": adds detail to or builds on the parent
+  - "answers": a fact/decision/idea/opinion that answers a parent question
+  - "blocks": a risk that threatens a parent decision/action/idea
+  - "relates_to": a strong thematic link that isn't one of the above`;
 
 // Volatile per-call data goes AFTER the cached prefix (in the user message).
 function buildUserPrompt(
@@ -114,7 +139,7 @@ ${nodesBlock}
 New utterances (index, speaker, text):
 ${utterancesBlock}
 
-Classify each utterance and propose edges using the record_classification tool.`;
+Classify each utterance and connect each new node to its parent using the record_classification tool.`;
 }
 
 // The tool's input_schema is the structured response contract (formerly the
@@ -138,20 +163,14 @@ const CLASSIFY_TOOL = {
             summary: { type: "string" },
             node_id: { type: "string" },
             confidence: { type: "number" },
-          },
-          required: ["index", "action"],
-        },
-      },
-      edges: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            from: { type: "string" },
-            to: { type: "string" },
+            parent: {
+              type: "string",
+              description:
+                "For action 'new': the parent node's id, or 'new:N', or empty for the session's first node.",
+            },
             relation: { type: "string", enum: RELATIONS },
           },
-          required: ["from", "to", "relation"],
+          required: ["index", "action"],
         },
       },
     },
@@ -239,48 +258,43 @@ Deno.serve(async (req) => {
     // Map decision index -> created node id, so edges can reference "new:N"
     const newNodeByIndex = new Map<number, string>();
 
-    // Running layout state: every visible node's position, plus new ones as
-    // they're created this turn. Drives the center/rightward/stack-above rule.
+    // Running layout state: every visible node's position + parent, plus new
+    // ones as they're created this turn. Drives the connected-flow tree layout.
     const placed: Placed[] = visibleNodes
       .filter((n) => typeof n.position_x === "number")
-      .map((n) => ({ id: n.id, x: n.position_x, y: n.position_y ?? CENTER_Y }));
+      .map((n) => ({
+        id: n.id,
+        x: n.position_x,
+        y: n.position_y ?? ROOT_Y,
+        parent_id: n.parent_id ?? null,
+      }));
 
-    // Resolve an edge endpoint ref to a node id that's already placed
-    const resolvePlaced = (ref: unknown): string | null => {
-      if (typeof ref !== "string") return null;
+    // Resolve a parent ref ("new:N", a bare index, or an existing id) to a real
+    // node id that's already placed this turn or already on the board.
+    const resolveParent = (ref: unknown): string | null => {
+      if (typeof ref !== "string" || !ref) return null;
       const asNew = ref.startsWith("new:")
         ? newNodeByIndex.get(Number(ref.slice(4)))
         : newNodeByIndex.get(Number(ref));
       if (asNew && placed.some((p) => p.id === asNew)) return asNew;
       return placed.some((p) => p.id === ref) ? ref : null;
     };
-    // For a new node at decision index idx, find an existing/earlier node it
-    // connects to (its anchor) so it can stack above rather than float right.
-    // Only STRUCTURAL relations anchor placement — a loose "relates_to" still
-    // draws a connector but lets a new topic spread rightward.
-    const STACK_RELATIONS = new Set(["expands", "answers", "blocks"]);
-    const anchorForIndex = (idx: number): string | null => {
-      const isThis = (r: unknown) => r === `new:${idx}` || r === String(idx);
-      for (const e of result?.edges ?? []) {
-        if (!STACK_RELATIONS.has(e.relation)) continue;
-        if (isThis(e.from)) {
-          const a = resolvePlaced(e.to);
-          if (a) return a;
-        }
-        if (isThis(e.to)) {
-          const a = resolvePlaced(e.from);
-          if (a) return a;
-        }
-      }
-      return null;
-    };
+
+    let edgesCreated = 0;
 
     for (const d of result?.decisions ?? []) {
       const utt = pending[d.index];
       if (!utt || d.action === "skip") continue;
 
       if (d.action === "new" && d.type && NODE_TYPES.includes(d.type) && d.title) {
-        const placement = placeNode(placed, anchorForIndex(d.index));
+        // If the model didn't give a valid parent but the board already has
+        // nodes, connect to the most recent one so nothing is ever orphaned.
+        let parentId = resolveParent(d.parent);
+        if (!parentId && placed.length > 0) {
+          parentId = placed[placed.length - 1].id;
+        }
+        const relation = RELATIONS.includes(d.relation) ? d.relation : "leads_to";
+        const placement = placeNode(placed, parentId);
         const node = await base44.entities.Node.create({
           owner_user_id: user.id,
           session_id,
@@ -289,6 +303,7 @@ Deno.serve(async (req) => {
           summary: (d.summary || "").slice(0, 600),
           status: OPEN_STATUS_TYPES.has(d.type) ? "open" : "na",
           confidence: typeof d.confidence === "number" ? d.confidence : undefined,
+          parent_id: parentId || undefined,
           ...placement,
         });
         newNodeByIndex.set(d.index, node.id);
@@ -296,10 +311,22 @@ Deno.serve(async (req) => {
           id: node.id,
           x: placement.position_x,
           y: placement.position_y,
+          parent_id: parentId,
         });
         created++;
         // Push the op the moment the node exists — no waiting for the batch
         await appendOp("create_node", { node });
+        // Draw the connector from parent to child, live
+        if (parentId) {
+          const edge = await base44.entities.NodeEdge.create({
+            from_node_id: parentId,
+            to_node_id: node.id,
+            relation,
+            cross_session: false,
+          });
+          await appendOp("create_edge", { edge });
+          edgesCreated++;
+        }
         links.push({ node_id: node.id, utterance_id: utt.id });
         events.push({
           user_id: user.id,
@@ -327,34 +354,6 @@ Deno.serve(async (req) => {
           meta: { session_id, node_id: target.id, action: d.action },
         });
       }
-    }
-
-    // Resolve "new:N" / existing-id references to real node ids, then emit
-    // create_edge ops live — the same per-utterance path as create_node.
-    const resolveRef = (ref: unknown): string | null => {
-      if (typeof ref !== "string") return null;
-      if (ref.startsWith("new:")) {
-        return newNodeByIndex.get(Number(ref.slice(4))) ?? null;
-      }
-      if (newNodeByIndex.has(Number(ref))) return newNodeByIndex.get(Number(ref))!;
-      return visibleNodes.some((n) => n.id === ref) ||
-        [...newNodeByIndex.values()].includes(ref)
-        ? ref
-        : null;
-    };
-    let edgesCreated = 0;
-    for (const e of result?.edges ?? []) {
-      const from = resolveRef(e.from);
-      const to = resolveRef(e.to);
-      if (!from || !to || from === to || !RELATIONS.includes(e.relation)) continue;
-      const edge = await base44.entities.NodeEdge.create({
-        from_node_id: from,
-        to_node_id: to,
-        relation: e.relation,
-        cross_session: false,
-      });
-      await appendOp("create_edge", { edge });
-      edgesCreated++;
     }
 
     // Tail writes are independent — run them together
