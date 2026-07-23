@@ -9,6 +9,7 @@ import { createClientFromRequest } from "npm:@base44/sdk";
 const IMPORT_BATCH_SIZE = 12;
 const NODE_TYPES = ["idea", "fact", "question", "decision", "risk", "action"];
 const OPEN_STATUS_TYPES = new Set(["question", "risk", "action"]);
+const RELATIONS = ["expands", "answers", "blocks", "relates_to"];
 
 // Loose grid with jitter so notes feel placed, not machine-gridded
 function placeNode(index: number) {
@@ -62,7 +63,14 @@ Rules:
 - Most utterances in casual conversation are "skip". Be selective — a node should be worth pinning to a wall.
 - Prefer "attach"/"expand" over creating a near-duplicate node. node_id must come from the existing nodes list.
 - For action nodes, put the owner in the title when stated (e.g. "Maya: draft launch email").
-- A single utterance containing several distinct thoughts should still produce only its single strongest node.`;
+- A single utterance containing several distinct thoughts should still produce only its single strongest node.
+
+ALSO return "edges": connections between a node you are creating THIS turn and an existing node (or another new one from this turn). Look actively for these — a good map is richly connected, and noticing that a new thought relates to something said earlier is the whole point. Relations:
+- "answers": a fact/decision/idea/opinion that answers an open question
+- "blocks": a risk that threatens a decision/action/idea
+- "expands": builds on or adds detail to another node
+- "relates_to": a strong thematic link that isn't one of the above
+Reference nodes by "from" and "to": use an existing node's id, or "new:N" to reference the node created by decision index N this turn. Only propose edges you're genuinely confident about, but don't be stingy — err toward surfacing a real connection over missing it. No self-edges, no duplicates of edges already implied by the existing map.`;
 }
 
 Deno.serve(async (req) => {
@@ -105,12 +113,15 @@ Deno.serve(async (req) => {
       return Response.json({ done: true, created: 0, processed: 0 });
     }
 
-    const existingNodes = await base44.entities.Node.filter(
-      { session_id },
-      "created_date",
-      200,
-    );
-    const openList = existingNodes.map((n) => ({
+    // Independent reads run in parallel — nodes for context, last seq for the
+    // ops counter. Hidden nodes are excluded as re-attach targets (the user
+    // deliberately hid them) but still count for placement offset.
+    const [existingNodes, lastOps] = await Promise.all([
+      base44.entities.Node.filter({ session_id }, "created_date", 200),
+      base44.entities.SessionOp.filter({ session_id }, "-seq", 1),
+    ]);
+    const visibleNodes = existingNodes.filter((n) => !n.hidden);
+    const openList = visibleNodes.map((n) => ({
       id: n.id,
       type: n.type,
       title: n.title,
@@ -118,11 +129,6 @@ Deno.serve(async (req) => {
     }));
 
     // Ops are appended with an incrementing per-session sequence number
-    const lastOps = await base44.entities.SessionOp.filter(
-      { session_id },
-      "-seq",
-      1,
-    );
     let seq = lastOps[0]?.seq ?? 0;
     const appendOp = (op_type: string, payload: Record<string, unknown>) =>
       base44.entities.SessionOp.create({
@@ -157,6 +163,18 @@ Deno.serve(async (req) => {
               required: ["index", "action"],
             },
           },
+          edges: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                from: { type: "string" },
+                to: { type: "string" },
+                relation: { type: "string", enum: RELATIONS },
+              },
+              required: ["from", "to", "relation"],
+            },
+          },
         },
         required: ["decisions"],
       },
@@ -165,6 +183,8 @@ Deno.serve(async (req) => {
     let created = 0;
     const links: { node_id: string; utterance_id: string }[] = [];
     const events: Record<string, unknown>[] = [];
+    // Map decision index -> created node id, so edges can reference "new:N"
+    const newNodeByIndex = new Map<number, string>();
 
     for (const d of result?.decisions ?? []) {
       const utt = pending[d.index];
@@ -181,6 +201,7 @@ Deno.serve(async (req) => {
           confidence: typeof d.confidence === "number" ? d.confidence : undefined,
           ...placeNode(existingNodes.length + created),
         });
+        newNodeByIndex.set(d.index, node.id);
         created++;
         // Push the op the moment the node exists — no waiting for the batch
         await appendOp("create_node", { node });
@@ -191,7 +212,7 @@ Deno.serve(async (req) => {
           meta: { session_id, node_id: node.id, type: d.type },
         });
       } else if ((d.action === "attach" || d.action === "expand") && d.node_id) {
-        const target = existingNodes.find((n) => n.id === d.node_id);
+        const target = visibleNodes.find((n) => n.id === d.node_id);
         if (!target) continue;
         if (d.action === "expand" && d.summary) {
           await base44.entities.Node.update(target.id, {
@@ -213,16 +234,42 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (links.length) {
-      await base44.entities.NodeUtteranceLink.bulkCreate(links);
-    }
-    if (events.length) {
-      await base44.entities.UsageEvent.bulkCreate(events);
+    // Resolve "new:N" / existing-id references to real node ids, then emit
+    // create_edge ops live — the same per-utterance path as create_node.
+    const resolveRef = (ref: unknown): string | null => {
+      if (typeof ref !== "string") return null;
+      if (ref.startsWith("new:")) {
+        return newNodeByIndex.get(Number(ref.slice(4))) ?? null;
+      }
+      if (newNodeByIndex.has(Number(ref))) return newNodeByIndex.get(Number(ref))!;
+      return visibleNodes.some((n) => n.id === ref) ||
+        [...newNodeByIndex.values()].includes(ref)
+        ? ref
+        : null;
+    };
+    let edgesCreated = 0;
+    for (const e of result?.edges ?? []) {
+      const from = resolveRef(e.from);
+      const to = resolveRef(e.to);
+      if (!from || !to || from === to || !RELATIONS.includes(e.relation)) continue;
+      const edge = await base44.entities.NodeEdge.create({
+        from_node_id: from,
+        to_node_id: to,
+        relation: e.relation,
+        cross_session: false,
+      });
+      await appendOp("create_edge", { edge });
+      edgesCreated++;
     }
 
-    await base44.entities.Utterance.bulkUpdate(
-      pending.map((u) => ({ id: u.id, processed: true })),
-    );
+    // Tail writes are independent — run them together
+    await Promise.all([
+      links.length ? base44.entities.NodeUtteranceLink.bulkCreate(links) : null,
+      events.length ? base44.entities.UsageEvent.bulkCreate(events) : null,
+      base44.entities.Utterance.bulkUpdate(
+        pending.map((u) => ({ id: u.id, processed: true })),
+      ),
+    ]);
 
     const nextPending = await base44.entities.Utterance.filter(
       { session_id, processed: false },
@@ -237,7 +284,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    return Response.json({ done, created, processed: pending.length });
+    return Response.json({ done, created, edges: edgesCreated, processed: pending.length });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 500 });
   }
