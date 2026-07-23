@@ -6,7 +6,7 @@ import { Logo } from "@/components/Logo";
 import { NodeCard } from "@/components/NodeCard";
 import { EdgeLayer } from "@/components/EdgeLayer";
 import { NodeDetailPanel } from "@/components/NodeDetailPanel";
-import { MicBar, BotBar } from "@/components/LiveBars";
+import { MicBar, BotBar, LiveUtteranceFeed } from "@/components/LiveBars";
 import { usePanZoom } from "@/lib/usePanZoom";
 import {
   ArrowLeft,
@@ -693,6 +693,7 @@ export default function Board() {
           </div>
         </div>
 
+        {isLive && <LiveUtteranceFeed utterances={utterances} />}
         {isMicLive && (
           <MicBar onFinalTurn={handleMicFinal} onEnd={endLiveSession} ending={ending} />
         )}

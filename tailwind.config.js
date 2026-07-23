@@ -81,19 +81,34 @@ export default {
         'brutal-lg': '6px 6px 0 0 #26241F',
       },
       keyframes: {
+        // Snappy, bouncy scale-up — the node should feel like it jumps in
         'pop-in': {
-          '0%': { opacity: '0', transform: 'scale(0.85) rotate(var(--note-rotation, 0deg))' },
-          '70%': { opacity: '1', transform: 'scale(1.03) rotate(var(--note-rotation, 0deg))' },
+          '0%': { opacity: '0', transform: 'scale(0.5) rotate(var(--note-rotation, 0deg))' },
+          '55%': { opacity: '1', transform: 'scale(1.12) rotate(var(--note-rotation, 0deg))' },
+          '75%': { transform: 'scale(0.96) rotate(var(--note-rotation, 0deg))' },
           '100%': { opacity: '1', transform: 'scale(1) rotate(var(--note-rotation, 0deg))' },
         },
         'fade-up': {
           '0%': { opacity: '0', transform: 'translateY(8px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
+        // Transcript utterance floats up and fades once it's been processed
+        'float-away': {
+          '0%': { opacity: '1', transform: 'translateY(0)', maxHeight: '80px' },
+          '60%': { opacity: '0', transform: 'translateY(-14px)' },
+          '100%': { opacity: '0', transform: 'translateY(-14px)', maxHeight: '0px', marginBottom: '0px' },
+        },
+        // "Tackling" listening indicator — equalizer bars
+        'eq-bar': {
+          '0%, 100%': { transform: 'scaleY(0.35)' },
+          '50%': { transform: 'scaleY(1)' },
+        },
       },
       animation: {
-        'pop-in': 'pop-in 320ms cubic-bezier(0.34, 1.4, 0.64, 1) both',
+        'pop-in': 'pop-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both',
         'fade-up': 'fade-up 400ms ease-out both',
+        'float-away': 'float-away 620ms ease-in forwards',
+        'eq-bar': 'eq-bar 900ms ease-in-out infinite',
       },
     },
   },

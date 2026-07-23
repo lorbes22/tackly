@@ -1,6 +1,79 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bot, Mic, Square } from "lucide-react";
 import { useHoldToTalk } from "@/lib/useHoldToTalk";
+
+// Live feed of recent utterances above the capture bar. Each utterance floats
+// up and fades the moment it's been processed into the map, rather than just
+// vanishing — a small "that thought landed" cue.
+export function LiveUtteranceFeed({ utterances }) {
+  const [exiting, setExiting] = useState(() => new Set());
+  const timers = useRef(new Map());
+
+  useEffect(() => {
+    for (const u of utterances) {
+      if (u.processed && !exiting.has(u.id) && !timers.current.has(u.id)) {
+        setExiting((prev) => new Set(prev).add(u.id));
+        const t = setTimeout(() => {
+          timers.current.delete(u.id);
+          setExiting((prev) => {
+            const next = new Set(prev);
+            next.delete(u.id);
+            return next;
+          });
+        }, 640);
+        timers.current.set(u.id, t);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [utterances]);
+
+  useEffect(() => () => {
+    for (const t of timers.current.values()) clearTimeout(t);
+  }, []);
+
+  // Show the tail: still-unprocessed utterances plus ones currently floating out
+  const visible = utterances
+    .filter((u) => !u.processed || exiting.has(u.id))
+    .slice(-4);
+
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-24 z-10 flex flex-col items-center gap-1.5 px-4">
+      {visible.map((u) => (
+        <div
+          key={u.id}
+          className={`max-w-md rounded-xl border-2 border-ink bg-paper-raised px-3 py-1.5 text-sm text-ink shadow-brutal-sm ${
+            exiting.has(u.id) ? "animate-float-away" : "animate-fade-up"
+          }`}
+        >
+          {u.speaker_label && u.speaker_label !== "Me" && (
+            <span className="mr-1.5 text-xs font-semibold text-periwinkle-deep">
+              {u.speaker_label}
+            </span>
+          )}
+          {u.text}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// "Tackling" — the listening indicator shown while the mic is held.
+// Animated equalizer bars so it reads as actively hearing you.
+function TacklingIndicator() {
+  return (
+    <span className="flex items-end gap-[3px]" aria-hidden="true">
+      {[0, 1, 2, 3].map((i) => (
+        <span
+          key={i}
+          className="w-[3px] origin-bottom rounded-full bg-ink animate-eq-bar"
+          style={{ height: "14px", animationDelay: `${i * 140}ms` }}
+        />
+      ))}
+    </span>
+  );
+}
 
 // Bottom-center live capture controls for the board.
 
@@ -62,12 +135,22 @@ export function MicBar({ onFinalTurn, onEnd, ending }) {
               : "bg-note-mint hover:-translate-y-0.5"
           }`}
         >
-          <Mic className="h-5 w-5" />
-          {state === "listening"
-            ? "Listening — keep holding"
-            : state === "connecting"
-            ? "Connecting…"
-            : "Hold to talk (or hold Space)"}
+          {state === "listening" ? (
+            <>
+              <TacklingIndicator />
+              Tackling… keep holding
+            </>
+          ) : state === "connecting" ? (
+            <>
+              <Mic className="h-5 w-5" />
+              Connecting…
+            </>
+          ) : (
+            <>
+              <Mic className="h-5 w-5" />
+              Hold to talk (or hold Space)
+            </>
+          )}
         </button>
         <button
           type="button"
