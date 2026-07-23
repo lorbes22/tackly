@@ -12,11 +12,13 @@ import { classifyWithTool, makeAnthropic } from "../../shared/claude.ts";
 // per decision.
 const TIER1_MODEL = "claude-haiku-4-5-20251001";
 const IMPORT_BATCH_SIZE = 12;
-const NODE_TYPES = ["idea", "fact", "opinion", "question", "decision", "risk", "action", "aside"];
+const NODE_TYPES = ["topic", "idea", "question", "decision", "risk", "action", "evidence", "opinion", "waffle"];
 const OPEN_STATUS_TYPES = new Set(["question", "risk", "action"]);
 // leads_to is the general "one thought followed from another" flow — the
-// default connective tissue of a thinking session.
-const RELATIONS = ["leads_to", "expands", "answers", "blocks", "relates_to"];
+// default connective tissue of a thinking session. supports/contradicts/causes
+// are the "smart connect" relations for richer structural links; rendered as
+// small labels on the connector (smaller/lighter than a full node).
+const RELATIONS = ["leads_to", "expands", "answers", "supports", "contradicts", "causes", "blocks", "relates_to"];
 
 // Connected-flow layout: the board is a top-down tree. The first node sits near
 // top-center (the root); every other node hangs BELOW its parent. Siblings
@@ -79,48 +81,62 @@ function placeNode(placed: Placed[], parentId: string | null) {
 const TIER1_SYSTEM = `You are the classification engine for Tackly, a tool that turns talk — meetings or personal spoken thinking — into a map of thought nodes.
 
 Analytical node types (real substance worth mapping):
+- topic: introduces, names, or frames a subject/section of the discussion — especially useful when the speaker announces something like "we have two ideas" or "let's talk about X" before getting into specifics. A topic is a natural PARENT for the ideas/questions/risks that follow under it.
 - idea: a proposal, suggestion, or possibility raised
-- fact: a stated, objective, verifiable piece of information
-- opinion: a subjective view, preference, judgment, or reaction — distinct from fact, which is verifiable. "I think X is better" is opinion; "X shipped in March" is fact.
 - question: something raised but not yet answered
 - decision: something the group or person has committed to
 - risk: a concern, blocker, or potential problem
 - action: a task or follow-up, with an owner if known
+- evidence: a stated, objective, verifiable fact or data point
+- opinion: a subjective view, preference, judgment, or reaction — distinct from evidence, which is verifiable. "I think X is better" is opinion; "X shipped in March" is evidence.
 
 One non-analytical type:
-- aside: a tangential or personal remark that has SOME real content or reaction worth keeping, but no analytical weight — an off-topic aside, a personal note, a light reaction. NOT the same as filler.
+- waffle: a tangential or personal remark that has SOME real content or reaction worth keeping, but no analytical weight — an off-topic aside, a personal note, a light reaction. NOT the same as filler.
 
-For EACH utterance index, decide exactly one action. First choose the bucket:
+For EACH utterance, decide one or more decisions. First choose the bucket for the substance in it:
 1. SKIP — true filler with no content: "um", "okay", "let's see", "right", greetings, acknowledgements, dead air. Drop these entirely.
-2. ASIDE — has some content or a genuine reaction but is off-topic or personal, no analytical weight ("ha, my coffee's gone cold", "this reminds me of my last job"). Also a meta-remark about the session or the speaker's state ("just trying this out, not sure how it works", "let me think out loud here", "not sure where to start") — keep these as aside nodes; an opening one often becomes the root the whole session flows from. Keep as an "aside"-type node.
-3. ANALYTICAL — real substance: classify into one of the analytical types above.
+2. WAFFLE — has some content or a genuine reaction but is off-topic or personal, no analytical weight ("ha, my coffee's gone cold", "this reminds me of my last job"). Also a bare meta-remark about the session or the speaker's state with nothing else in it ("just trying this out, not sure how it works", "let me think out loud here") — keep these as waffle nodes; an opening one often becomes the root the whole session flows from.
+3. ANALYTICAL — real substance: classify into one of the analytical types above (topic included).
 
-Then the action. Default strongly to "new" — a granular map of many connected nodes is the goal, NOT a few nodes with fat summaries:
-- "new" — the DEFAULT. Use it for any thought that can stand on its own card, INCLUDING a sub-point, cause, consequence, specific detail, or example ABOUT an existing node. Give type, a punchy title (max 8 words), a 1-2 sentence summary, confidence 0-1, and connect it to the relevant existing node as its parent (see CONNECTING). Example: after a "UGC platform risk" node exists, "we won't have many creators at the start, so brands won't join" is its OWN new node (a supporting risk/detail) connected to that risk — do NOT fold it into the risk's summary.
+CRITICAL — one utterance can and should produce MULTIPLE decisions when it states multiple distinct nameable things. Do not compress several named items into one node or one fat summary. The clearest signal is the speaker explicitly enumerating things: "we have two ideas: A and B", "there are three risks here", "first X, second Y". Each named item is its own node. See the worked example below — this is the single most important behavior to get right.
+
+Then the action for each decision. Default strongly to "new" — a granular map of many connected nodes is the goal, NOT a few nodes with fat summaries:
+- "new" — the DEFAULT. Use it for any thought that can stand on its own card, INCLUDING a sub-point, cause, consequence, specific detail, example, or named item ABOUT an existing node. Give type, a punchy title (max 8 words), a 1-2 sentence summary, confidence 0-1, and connect it to the relevant node as its parent (see CONNECTING). Example: after a "UGC platform risk" node exists, "we won't have many creators at the start, so brands won't join" is its OWN new node (a supporting risk/detail) connected to that risk — do NOT fold it into the risk's summary.
 - "attach" — ONLY a near-verbatim restatement or bare acknowledgement of an existing node that adds no new information at all; give that node_id. Rare.
 - "expand" — ONLY when the utterance completes the SAME unfinished thought that produced an existing node (a sentence that trailed off across a pause and is now finished), and it isn't worth its own card; give node_id + a merged summary. Rare. If the utterance adds a distinct point rather than finishing the same one, use "new" connected instead.
 - "skip" — bucket 1 (true filler) only.
 
 Rules:
 - When unsure between "expand" and a "new" connected node, choose "new" connected. More connected nodes beats fatter summaries.
-- Be selective only in the sense of dropping true filler; genuine sub-points each deserve their own connected node.
-- attach/expand node_id must come from the existing nodes list.
+- When unsure between one node covering several named items and several connected nodes, choose several. More connected nodes beats compressed ones.
+- attach/expand node_id must come from the existing nodes list (a node that already existed before this turn).
 - For action nodes, put the owner in the title when stated (e.g. "Maya: draft launch email").
-- A single utterance containing several distinct thoughts should still produce only its single strongest node this turn.
 
-CONNECTING NODES — this is the heart of the board. For each new node make a REAL three-way choice about its "parent":
-- CONNECT: set "parent" to the existing node's id (or "new:N" for a node you create earlier this turn) that this thought most directly follows from or relates to, and set "relation". This is the common case — a flowing conversation builds on itself.
+CONNECTING NODES — this is the heart of the board. Every "new" decision needs a "temp_id" (a short id you invent, e.g. "t1", "idea_a" — unique within this response) so LATER decisions in the SAME response can reference it as a parent. Then make a REAL three-way choice about "parent":
+- CONNECT: set "parent" to an existing node's id, OR to "temp:<temp_id>" for a node created by an EARLIER decision in this same response, whichever this thought most directly follows from or relates to — and set "relation". This is the common case — a flowing conversation, or a set of named items under the topic that introduced them, builds on itself.
 - INDEPENDENT BRANCH: set "parent" to the exact string "independent" only when the thought moves to a genuinely different SUBJECT — the topic itself changes (was discussing onboarding, now discussing hiring; "on a different note", "switching topics", "unrelated, but"). A session can have several independent root branches for genuinely different subjects — that is correct and expected.
 - The very first node of the session is always "independent" (nothing to connect to yet).
-- IMPORTANT — "second idea", "another idea", "alternatively", "or instead" about the SAME subject are NOT independent. They are alternatives/siblings within the same discussion: connect them (to the node that introduced the topic, or to the sibling they're an alternative to, usually with "relates_to" or "leads_to"). Two competing ideas for the same problem belong on the same branch, not separate roots.
+- IMPORTANT — "second idea", "another idea", "alternatively", "or instead" about the SAME subject are NOT independent. They are alternatives/siblings within the same discussion: connect them (to the topic/node that introduced them, or to the sibling they're an alternative to). Two competing ideas for the same problem belong on the same branch, not separate roots.
 - Do NOT force a connection you don't believe onto an unrelated subject — but do NOT split one continuous discussion into isolated roots either. When in doubt within the same topic, connect.
-- When you connect, pick the SINGLE most relevant parent. A risk about idea 1 parents to idea 1, not idea 2 or the latest node. A thought that CONTINUES the immediately preceding one (across a pause) attaches to that same node — see the recent-context utterances.
-- "relation" (only when connecting):
-  - "leads_to": one thought naturally followed from / was prompted by the parent (common)
+- When you connect, pick the SINGLE most relevant parent. A risk about idea A parents to idea A, not idea B or the latest node. A thought that CONTINUES the immediately preceding one (across a pause) attaches to that same node — see the recent-context utterances.
+- "relation" (only when connecting) — pick the one that best describes how the child relates to its parent:
+  - "leads_to": one thought naturally followed from / was prompted by the parent (the common default flow)
   - "expands": adds detail to or builds on the parent
-  - "answers": a fact/decision/idea/opinion that answers a parent question
+  - "answers": evidence/decision/idea/opinion that answers a parent question
+  - "supports": evidence or an opinion that backs up/reinforces the parent
+  - "contradicts": conflicts with, casts doubt on, or argues against the parent
+  - "causes": the parent is a direct effect/consequence of this node (stronger and more specific than leads_to)
   - "blocks": a risk that threatens a parent decision/action/idea
-  - "relates_to": a strong thematic link that isn't one of the above`;
+  - "relates_to": a strong thematic link that isn't one of the above
+
+WORKED EXAMPLE (the pattern to follow for enumerated items):
+Utterance: "Hey, we're going to talk about two ideas we have for a project — the first is a UGC platform, the other is a search engine, but there's a few risks."
+Correct decisions (all for this one utterance):
+1. new, type=topic, temp_id="t1", title="Two project ideas to explore", parent="independent" (or connects to whatever came before)
+2. new, type=idea, temp_id="i1", title="UGC platform idea", parent="temp:t1", relation="leads_to"
+3. new, type=idea, temp_id="i2", title="Search engine idea", parent="temp:t1", relation="leads_to"
+WRONG: cramming "UGC platform and search engine" into one idea node, or into the topic's summary.
+Later, a separate utterance "the risk with the search engine is it's complex to build" arrives in a LATER turn — by then i1/i2 are real existing nodes with real ids; create a new risk node with parent = the search engine idea's real id (not the UGC idea, not the topic, not whatever node happens to be most recent).`;
 
 // Volatile per-call data goes AFTER the cached prefix (in the user message).
 function buildUserPrompt(
@@ -147,10 +163,10 @@ ${nodesBlock}
 Recent prior utterances (context only — already handled, do NOT reclassify these; use them to tell whether a NEW utterance is continuing a thought from just before a pause vs starting fresh):
 ${contextBlock}
 
-New utterances to classify now (index, speaker, text):
+New utterances to classify now (utterance_index, speaker, text):
 ${utterancesBlock}
 
-Classify each new utterance and choose each new node's parent (or "independent") using the record_classification tool.`;
+Classify each new utterance using the record_classification tool. Remember: one utterance can produce several decisions when it names several distinct things — don't compress enumerated items into one node.`;
 }
 
 // The tool's input_schema is the structured response contract (formerly the
@@ -158,7 +174,7 @@ Classify each new utterance and choose each new node's parent (or "independent")
 const CLASSIFY_TOOL = {
   name: "record_classification",
   description:
-    "Record the classification decision for each utterance and any edges between nodes.",
+    "Record one or more classification decisions per utterance, and any edges between nodes.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -167,21 +183,31 @@ const CLASSIFY_TOOL = {
         items: {
           type: "object",
           properties: {
-            index: { type: "integer" },
+            utterance_index: {
+              type: "integer",
+              description: "Which utterance (from the numbered list) this decision is about. Multiple decisions may share the same utterance_index.",
+            },
             action: { type: "string", enum: ["skip", "new", "attach", "expand"] },
             type: { type: "string", enum: NODE_TYPES },
             title: { type: "string" },
             summary: { type: "string" },
-            node_id: { type: "string" },
+            node_id: {
+              type: "string",
+              description: "For 'attach'/'expand' only: the id of the pre-existing node being referenced.",
+            },
             confidence: { type: "number" },
+            temp_id: {
+              type: "string",
+              description: "For 'new' only: a short id you invent (e.g. 't1'), unique within this response, so a LATER decision in this same response can set its parent to 'temp:<temp_id>'.",
+            },
             parent: {
               type: "string",
               description:
-                "For action 'new': the parent node's id, or 'new:N', or empty for the session's first node.",
+                "For action 'new': an existing node's id, 'temp:<temp_id>' referencing a node created earlier in this same response, or 'independent' for a genuinely new root branch.",
             },
             relation: { type: "string", enum: RELATIONS },
           },
-          required: ["index", "action"],
+          required: ["utterance_index", "action"],
         },
       },
     },
@@ -336,8 +362,13 @@ Deno.serve(async (req) => {
     let created = 0;
     const links: { node_id: string; utterance_id: string }[] = [];
     const events: Record<string, unknown>[] = [];
-    // Map decision index -> created node id, so edges can reference "new:N"
-    const newNodeByIndex = new Map<number, string>();
+    // Map the model's own invented temp_id -> created node id, so a LATER
+    // decision in this same response can parent to a node created by an
+    // EARLIER decision — even when both decisions share the same utterance
+    // (this is what makes "one utterance, several named items" work: each
+    // item gets its own temp_id, and siblings/children reference each other
+    // by temp_id rather than by utterance position).
+    const newNodeByTempId = new Map<string, string>();
 
     // Running layout state: every visible node's position + parent, plus new
     // ones as they're created this turn. Drives the connected-flow tree layout.
@@ -350,21 +381,22 @@ Deno.serve(async (req) => {
         parent_id: n.parent_id ?? null,
       }));
 
-    // Resolve a parent ref ("new:N", a bare index, or an existing id) to a real
-    // node id that's already placed this turn or already on the board.
+    // Resolve a parent ref ("temp:<id>" from earlier this response, or an
+    // existing node id) to a real node id that's placed this turn or already
+    // on the board. "independent"/empty/unresolvable all return null (root).
     const resolveParent = (ref: unknown): string | null => {
       if (typeof ref !== "string" || !ref) return null;
-      const asNew = ref.startsWith("new:")
-        ? newNodeByIndex.get(Number(ref.slice(4)))
-        : newNodeByIndex.get(Number(ref));
-      if (asNew && placed.some((p) => p.id === asNew)) return asNew;
+      const asTemp = ref.startsWith("temp:")
+        ? newNodeByTempId.get(ref.slice(5))
+        : newNodeByTempId.get(ref); // tolerate a bare temp_id without the prefix
+      if (asTemp && placed.some((p) => p.id === asTemp)) return asTemp;
       return placed.some((p) => p.id === ref) ? ref : null;
     };
 
     let edgesCreated = 0;
 
     for (const d of result?.decisions ?? []) {
-      const utt = batch[d.index];
+      const utt = batch[d.utterance_index];
       if (!utt || d.action === "skip") continue;
       const baseMs = utt.start_ms ?? Date.now();
 
@@ -389,8 +421,10 @@ Deno.serve(async (req) => {
         // Stage 3: if a provisional node was forming for this utterance, finalize
         // it IN PLACE (same record) instead of creating a new one — position,
         // connections and animations stay stable (PLAN.md provisional nodes).
+        // Only the FIRST new-node decision for utterance 0 claims it; any
+        // additional decisions from a multi-item utterance create fresh nodes.
         let node;
-        if (provisional_node_id && d.index === 0 && !provisionalConsumed) {
+        if (provisional_node_id && d.utterance_index === 0 && !provisionalConsumed) {
           provisionalConsumed = true;
           await base44.entities.Node.update(provisional_node_id, fields);
           node = { id: provisional_node_id, session_id, owner_user_id: user.id, ...fields };
@@ -403,7 +437,7 @@ Deno.serve(async (req) => {
           });
           await appendOp("create_node", { node }, baseMs);
         }
-        newNodeByIndex.set(d.index, node.id);
+        if (d.temp_id) newNodeByTempId.set(String(d.temp_id), node.id);
         placed.push({
           id: node.id,
           x: placement.position_x,
