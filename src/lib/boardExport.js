@@ -3,24 +3,31 @@
 // shapes + text, so canvas rasterization stays untainted.
 
 const TYPE_HEX = {
+  topic: "#D6EEEB",
   idea: "#E6E1F8",
-  fact: "#DCEFE3",
+  evidence: "#DCEFE3",
   opinion: "#FADCEB",
   question: "#FCE8C8",
   decision: "#DBEAF9",
   risk: "#F7DFDA",
   action: "#F9EDAF",
+  waffle: "#E9E7E2",
+  // Legacy aliases for nodes created before the taxonomy rename
+  fact: "#DCEFE3",
   aside: "#E9E7E2",
 };
 const TYPE_LABEL = {
+  topic: "TOPIC",
   idea: "IDEA",
-  fact: "FACT",
+  evidence: "EVIDENCE",
   opinion: "OPINION",
   question: "QUESTION",
   decision: "DECISION",
   risk: "RISK",
   action: "ACTION",
-  aside: "ASIDE",
+  waffle: "WAFFLE",
+  fact: "EVIDENCE",
+  aside: "WAFFLE",
 };
 const INK = "#26241F";
 const PAPER = "#FAF8F4";

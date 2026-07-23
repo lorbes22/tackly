@@ -16,7 +16,7 @@ const TIER2_SYSTEM = `You are the consolidation engine for Tackly, a tool that m
 
 2. "edges" — propose meaningful connections:
 - "expands": A adds detail or builds on B
-- "answers": A (a fact/decision/idea) answers question B
+- "answers": A (evidence/decision/idea/opinion) answers question B
 - "blocks": A (usually a risk) blocks or threatens B
 - "relates_to": strong thematic link (use sparingly)
 

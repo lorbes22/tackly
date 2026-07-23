@@ -65,7 +65,7 @@ export default function Board() {
   // manual drag overrides. dragPos holds the node currently being dragged so
   // its position (and its connectors) update live before it's persisted.
   const [dragPos, setDragPos] = useState(null); // { id, x, y } | null
-  const layoutPositions = useMemo(() => computeLayout(nodes), [nodes]);
+  const layoutPositions = useMemo(() => computeLayout(nodes, sizes), [nodes, sizes]);
   const positions = useMemo(
     () =>
       dragPos ? { ...layoutPositions, [dragPos.id]: { x: dragPos.x, y: dragPos.y } } : layoutPositions,
@@ -434,7 +434,7 @@ export default function Board() {
             const node = await Node.create({
               session_id: sessionId,
               owner_email: user?.email,
-              type: "aside",
+              type: "waffle",
               title: t.slice(0, 90),
               summary: "",
               status: "na",

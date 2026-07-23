@@ -41,7 +41,8 @@ export default {
           sky: { DEFAULT: '#DBEAF9', edge: '#A3C6E8' }, // decision
           coral: { DEFAULT: '#F7DFDA', edge: '#E0A99F' }, // risk
           gold: { DEFAULT: '#F9EDAF', edge: '#DDC65A' }, // action
-          gray: { DEFAULT: '#E9E7E2', edge: '#C3BFB6' }, // aside — muted, recedes
+          gray: { DEFAULT: '#E9E7E2', edge: '#C3BFB6' }, // waffle — muted, recedes
+          teal: { DEFAULT: '#D6EEEB', edge: '#8FC9C2' }, // topic
         },
         // shadcn/ui semantic mapping (CSS vars set in index.css)
         background: 'hsl(var(--background))',

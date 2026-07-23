@@ -6,11 +6,11 @@ import { classifyWithTool, makeAnthropic } from "../../shared/claude.ts";
 // + title) and returns a confidence so the client can settle it early (~90%).
 // This is NOT authoritative — process-session on end_of_turn is (stage 3).
 const MODEL = "claude-haiku-4-5-20251001";
-const NODE_TYPES = ["idea", "fact", "opinion", "question", "decision", "risk", "action", "aside"];
+const NODE_TYPES = ["topic", "idea", "evidence", "opinion", "question", "decision", "risk", "action", "waffle"];
 
 const SYSTEM = `You are giving a FAST rough guess of what kind of thought someone is expressing, from a partial (unfinished) sentence. Pick the single best node type and a short title. This is provisional — err toward a reasonable guess.
 
-Types: idea, fact, opinion, question, decision, risk, action (real substance) or aside (off-topic/personal remark with some content).
+Types: topic (introducing/framing a subject), idea, evidence (an objective fact/data point), opinion, question, decision, risk, action (real substance) or waffle (off-topic/personal remark with some content).
 
 Return via the tool: type, a punchy title (max 8 words), and confidence 0-1 for how sure you are given it's still unfinished.`;
 

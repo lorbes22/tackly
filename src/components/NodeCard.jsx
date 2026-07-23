@@ -5,15 +5,21 @@ import { forwardRef } from "react";
 import { StickyNote } from "lucide-react";
 
 export const NODE_TYPE_STYLES = {
+  topic: { fill: "bg-note-teal", label: "Topic" },
   idea: { fill: "bg-note-lavender", label: "Idea" },
-  fact: { fill: "bg-note-mint", label: "Fact" },
+  evidence: { fill: "bg-note-mint", label: "Evidence" },
   opinion: { fill: "bg-note-pink", label: "Opinion" },
   question: { fill: "bg-note-amber", label: "Question" },
   decision: { fill: "bg-note-sky", label: "Decision" },
   risk: { fill: "bg-note-coral", label: "Risk" },
   action: { fill: "bg-note-gold", label: "Action" },
-  // Aside recedes: muted fill + slightly transparent so it doesn't compete
-  aside: { fill: "bg-note-gray", label: "Aside", muted: true },
+  // Waffle (small talk with some content) recedes: muted fill + slightly
+  // transparent so it doesn't compete with the analytical nodes
+  waffle: { fill: "bg-note-gray", label: "🧇 Waffle", muted: true },
+  // Legacy aliases: older sessions stored "fact"/"aside" before the rename —
+  // keep them rendering correctly rather than falling back to Idea's style.
+  fact: { fill: "bg-note-mint", label: "Evidence" },
+  aside: { fill: "bg-note-gray", label: "🧇 Waffle", muted: true },
 };
 
 const STATUS_LABELS = {
