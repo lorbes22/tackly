@@ -107,12 +107,15 @@ Rules:
 - For action nodes, put the owner in the title when stated (e.g. "Maya: draft launch email").
 - A single utterance containing several distinct thoughts should still produce only its single strongest node.
 
-CONNECTING NODES — this is the heart of the board. Every new node connects to exactly ONE parent: the existing node (or another node you create earlier this same turn) that this thought most directly follows from or relates to. The board is one connected flow of thought — never leave a new node unconnected.
-- Set "parent" to that node's id, or "new:N" to reference the node created by decision index N this turn.
-- The VERY FIRST node of the whole session (when there are no existing nodes and it's the first "new" this turn) has no parent — leave "parent" empty. Every later node MUST have a parent.
-- Pick the SINGLE most relevant parent. If someone raises a risk about idea 1, its parent is idea 1 — not idea 2, not the most recent node. If a second idea follows the first, its parent is whatever it flows from (often the first idea, or the topic that introduced both).
-- Choose "relation" for how it connects to its parent:
-  - "leads_to": one thought naturally followed from / was prompted by the parent (the common case in a flowing conversation)
+CONNECTING NODES — this is the heart of the board. For each new node make a REAL three-way choice about its "parent":
+- CONNECT: set "parent" to the existing node's id (or "new:N" for a node you create earlier this turn) that this thought most directly follows from or relates to, and set "relation". This is the common case — a flowing conversation builds on itself.
+- INDEPENDENT BRANCH: set "parent" to the exact string "independent" only when the thought moves to a genuinely different SUBJECT — the topic itself changes (was discussing onboarding, now discussing hiring; "on a different note", "switching topics", "unrelated, but"). A session can have several independent root branches for genuinely different subjects — that is correct and expected.
+- The very first node of the session is always "independent" (nothing to connect to yet).
+- IMPORTANT — "second idea", "another idea", "alternatively", "or instead" about the SAME subject are NOT independent. They are alternatives/siblings within the same discussion: connect them (to the node that introduced the topic, or to the sibling they're an alternative to, usually with "relates_to" or "leads_to"). Two competing ideas for the same problem belong on the same branch, not separate roots.
+- Do NOT force a connection you don't believe onto an unrelated subject — but do NOT split one continuous discussion into isolated roots either. When in doubt within the same topic, connect.
+- When you connect, pick the SINGLE most relevant parent. A risk about idea 1 parents to idea 1, not idea 2 or the latest node. A thought that CONTINUES the immediately preceding one (across a pause) attaches to that same node — see the recent-context utterances.
+- "relation" (only when connecting):
+  - "leads_to": one thought naturally followed from / was prompted by the parent (common)
   - "expands": adds detail to or builds on the parent
   - "answers": a fact/decision/idea/opinion that answers a parent question
   - "blocks": a risk that threatens a parent decision/action/idea
@@ -123,10 +126,14 @@ function buildUserPrompt(
   sessionType: string,
   openList: { id: string; type: string; title: string; summary: string }[],
   batch: { speaker_label?: string; text: string }[],
+  context: { speaker_label?: string; text: string }[],
 ) {
   const nodesBlock = openList.length
     ? JSON.stringify(openList, null, 1)
     : "none yet";
+  const contextBlock = context.length
+    ? context.map((u) => `[${u.speaker_label || "Speaker"}]: ${u.text}`).join("\n")
+    : "none";
   const utterancesBlock = batch
     .map((u, i) => `${i}. [${u.speaker_label || "Speaker"}]: ${u.text}`)
     .join("\n");
@@ -136,10 +143,13 @@ function buildUserPrompt(
 Existing nodes in this session (id, type, title, summary):
 ${nodesBlock}
 
-New utterances (index, speaker, text):
+Recent prior utterances (context only — already handled, do NOT reclassify these; use them to tell whether a NEW utterance is continuing a thought from just before a pause vs starting fresh):
+${contextBlock}
+
+New utterances to classify now (index, speaker, text):
 ${utterancesBlock}
 
-Classify each utterance and connect each new node to its parent using the record_classification tool.`;
+Classify each new utterance and choose each new node's parent (or "independent") using the record_classification tool.`;
 }
 
 // The tool's input_schema is the structured response contract (formerly the
@@ -257,6 +267,22 @@ Deno.serve(async (req) => {
       "created_date",
       200,
     );
+
+    // Sliding-window context: the last ~3 utterances just BEFORE this batch, so
+    // a thought that continues across a pause isn't misread as unrelated.
+    const batchStartMs = Math.min(...batch.map((u) => u.start_ms ?? 0));
+    const recentUtts = await base44.entities.Utterance.filter(
+      { session_id },
+      "-start_ms",
+      16,
+    );
+    const contextUtts = recentUtts
+      .filter(
+        (u) =>
+          (u.start_ms ?? 0) < batchStartMs && !batch.some((b) => b.id === u.id),
+      )
+      .sort((a, b) => (a.start_ms ?? 0) - (b.start_ms ?? 0))
+      .slice(-3);
     const visibleNodes = existingNodes.filter((n) => !n.hidden);
     const openList = visibleNodes.map((n) => ({
       id: n.id,
@@ -288,7 +314,7 @@ Deno.serve(async (req) => {
         client: makeAnthropic(),
         model: TIER1_MODEL,
         system: TIER1_SYSTEM,
-        user: buildUserPrompt(session.type, openList, batch),
+        user: buildUserPrompt(session.type, openList, batch, contextUtts),
         tool: CLASSIFY_TOOL,
       }));
     } catch (err) {
@@ -338,12 +364,11 @@ Deno.serve(async (req) => {
       const baseMs = utt.start_ms ?? Date.now();
 
       if (d.action === "new" && d.type && NODE_TYPES.includes(d.type) && d.title) {
-        // If the model didn't give a valid parent but the board already has
-        // nodes, connect to the most recent one so nothing is ever orphaned.
-        let parentId = resolveParent(d.parent);
-        if (!parentId && placed.length > 0) {
-          parentId = placed[placed.length - 1].id;
-        }
+        // Respect the model's three-way choice: a resolved parent connects the
+        // node; "independent"/empty/unresolvable means a genuine new root
+        // branch. No blind attach-to-most-recent — that force-connected
+        // unrelated thoughts and broke the "separate idea" behavior (PLAN.md).
+        const parentId = resolveParent(d.parent);
         const relation = RELATIONS.includes(d.relation) ? d.relation : "leads_to";
         const placement = placeNode(placed, parentId);
         const node = await base44.entities.Node.create({
