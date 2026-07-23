@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
 
     if (session.bot_id) {
       const apiKey = Deno.env.get("RECALL_API_KEY");
-      const region = Deno.env.get("RECALL_REGION") || "us-east-1";
+      const region = Deno.env.get("RECALL_REGION") || "eu-central-1";
       if (apiKey) {
         // Best-effort: the bot also leaves on its own when the call ends
         await fetch(

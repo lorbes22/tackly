@@ -27,6 +27,27 @@ v1 scope decision (updated): meeting capture is live from the start, via Recall 
 - `RECALL_API_KEY` — meeting bot capture
 - `ASSEMBLYAI_API_KEY` — personal hold-to-talk capture
 - `ANTHROPIC_API_KEY` — direct Claude calls for Tier 1/Tier 2 classification, replacing Base44's built-in LLM
+- `RECALL_STATUS_WEBHOOK_SECRET` — Svix signing secret for the bot status-change webhook (see 1a)
+
+---
+
+## 1a. Personal vs. meeting/transcript — two genuinely different pipelines
+
+These share the Tier-1/Tier-2 classification pipeline and the ops-log realtime delivery, but capture works completely differently. Worth keeping straight — they are not the same code path with a flag, they're two separate ingestion routes that both happen to write `Utterance` rows.
+
+| | Personal (hold-to-talk) | Meeting (bot) | Meeting (imported transcript) |
+|---|---|---|---|
+| `Session.capture_source` | `mic_live` | `bot_live` | `import` |
+| `Session.type` | `personal` | `meeting` | `meeting` |
+| Who transcribes | **AssemblyAI**, browser mic, streaming SDK | **Recall**, bot joins the call — Recall does its own transcription (`recallai_streaming` provider), we never touch AssemblyAI for this path | Nobody — text is pasted/uploaded already-transcribed (`src/lib/transcript.js` parses it) |
+| Ingestion | `useHoldToTalk.js` → `classify-partial` (provisional) → `process-session` (final), per hold-press | `recall-webhook` (`transcript.data` events) → `Utterance.create` per finalized chunk, service-role write | `NewSession.jsx` bulk-creates all utterances up front, then `process-session` batches through them |
+| Speaker labels | Always "Me" (one speaker) | Recall's diarization — `participant.name` if the platform provides it, else `Speaker <id>` — carried straight into `Utterance.speaker_label` | Whatever the pasted transcript's "Name:" prefixes say (`parseTranscript`) |
+| Realtime cadence | As fast as AssemblyAI finalizes a turn (sub-second) | As fast as Recall's `recallai_streaming` finalizes a chunk and fires the webhook — same realtime, per-utterance shape as personal mode, not a batch/delay | N/A — all utterances exist immediately, `process-session` just churns through `IMPORT_BATCH_SIZE` (12) at a time |
+| Hold-to-talk available? | Yes, the whole time | **No** — there's no browser mic session during a live meeting, Recall's bot is the only capture source while `status === "active"`. Once the bot has left (`status` flips off `active`), the board shows a **"Continue this thread by voice"** button that re-opens the same session for mic capture — same lifecycle a personal session uses, just re-entered instead of started fresh (see Board.jsx `micContinuing`) | No live capture at all — the session goes straight to `processing` after the bulk-create |
+| How the session ends | User releases the hold key each turn; explicit "End session" flips `active → processing` | Two paths: (1) user clicks "End session" → `recall-stop-bot` tells the bot to leave + flips status, or (2) **`recall-status-webhook`** — a separate, project-wide Svix webhook Recall calls on `bot.call_ended`/`bot.fatal` (bot left/errored on its own, e.g. kicked or every human left) — auto-flips `active → processing` without the user having to remember to end it. This is a *different* webhook mechanism from `recall-webhook`: status-change events aren't deliverable via the per-bot `realtime_endpoints` token scheme, Recall requires them registered once in their dashboard's Webhooks tab against a fixed URL, verified via Svix HMAC (`svix-id`/`svix-timestamp`/`svix-signature` headers) rather than the per-session token. | Immediate — nothing to end |
+| Billing minutes | Utterance timestamp span (real AssemblyAI turn timings) | Utterance timestamp span (real Recall segment timings) | Utterance timestamp span (synthetic — `parseTranscript` assigns 1s/line, since pasted text has no real timing) |
+
+**Why Recall and not AssemblyAI for meetings:** Recall's bot is a call participant with its own transcription baked in — there's no separate STT vendor call to make on our side for meeting audio, and no way to run "hold to talk" against a call we're not producing audio into. AssemblyAI only ever sees the personal-mode browser mic stream.
 
 ---
 
@@ -173,8 +194,8 @@ This direction is a starting point for whoever builds the UI — worth running t
 
 ## 7. Open questions to confirm during build
 
-- Plan/pricing tiers aren't decided yet — needed before the billing wiring in Phase 5.
-- Node taxonomy (8 types above) is still evolving — fine to adjust further after seeing real sessions mapped.
-- Recall's real-time webhook needs a publicly reachable endpoint from a Base44 function, and Recall's webhook payloads should be signature-verified, not trusted blindly — confirm Recall's exact verification method when wiring this up in Phase 4.
+- ~~Plan/pricing tiers aren't decided yet~~ — **resolved**: Free (30 min/mo, personal only, no meetings), Plus (£10/mo, 300 min), Pro (£18/mo, 1000 min). Minutes = span of utterance timestamps, same formula for every capture source (see `base44/shared/billing.ts`). Payment collection (Stripe) and custom-branded transactional email (Resend, for signup/quota-warning type notifications — separate from Base44's own built-in OTP/reset emails, which aren't overridable) are still open — see HANDOVER-equivalent conversation notes for the pending decisions.
+- Node taxonomy (9 types now, `waffle` added) is still evolving — fine to adjust further after seeing real sessions mapped.
+- Recall's real-time transcript webhook (`recall-webhook`) is verified via the per-session `webhook_token` echoed back in `realtime_endpoints` metadata + the unguessable bot id — resolved. The separate bot status-change webhook (`recall-status-webhook`, for auto-detecting the meeting ending) uses real Svix HMAC signature verification instead, since status events aren't deliverable through `realtime_endpoints` — see 1a above. That endpoint still needs a one-time manual registration in Recall's dashboard (Webhooks tab) to get its signing secret.
 - Known bug as of the current build: nodes disappear whenever a new push-to-talk utterance is added (the transcript tab correctly keeps everything, only the node board loses prior nodes). This is almost certainly the symptom of a full-state overwrite happening somewhere — either the backend regenerating/upserting the whole node set per utterance instead of only adding what's new, or the frontend replacing its board state wholesale on each update instead of merging. Fixing the realtime delivery to match the ops-log pattern above should resolve this as a side effect, but verify directly: after the fix, push-to-talk twice in one session and confirm the first utterance's node(s) are still on the board after the second.
 - If live bot capture (Phase 4) turns out less reliable than expected under time pressure, fall back to the existing paste/import path for meetings rather than letting it block the rest of the build — same fallback logic as the personal-capture fallback above.

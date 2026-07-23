@@ -162,6 +162,70 @@ export function boardToSvg(nodes, edges, sizes = {}, positions = {}) {
 </svg>`;
 }
 
+// Markdown export — a clean, LLM-readable rendering of the board: the
+// parent/child tree (the board's real structure) plus any extra cross-links
+// consolidate-session added, listed separately since those aren't part of
+// the tree itself.
+export function boardToMarkdown(title, nodes, edges) {
+  if (nodes.length === 0) return `# ${title || "Untitled thread"}\n\n_No nodes yet._\n`;
+
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const children = new Map();
+  for (const n of nodes) {
+    if (!n.parent_id || !byId.has(n.parent_id)) continue;
+    if (!children.has(n.parent_id)) children.set(n.parent_id, []);
+    children.get(n.parent_id).push(n);
+  }
+  const roots = nodes.filter((n) => !n.parent_id || !byId.has(n.parent_id));
+
+  const line = (n, depth) => {
+    const indent = "  ".repeat(depth);
+    const label = (n.type || "node").toUpperCase();
+    const summary = n.summary ? ` — ${n.summary}` : "";
+    return `${indent}- **[${label}]** ${n.title || "(untitled)"}${summary}`;
+  };
+
+  const seen = new Set();
+  const lines = [];
+  const walk = (n, depth) => {
+    if (seen.has(n.id)) return; // guards a stray cycle, shouldn't happen
+    seen.add(n.id);
+    lines.push(line(n, depth));
+    for (const child of children.get(n.id) || []) walk(child, depth + 1);
+  };
+  for (const r of roots) walk(r, 0);
+
+  const treeEdgeKeys = new Set(
+    nodes.filter((n) => n.parent_id).map((n) => `${n.parent_id}->${n.id}`)
+  );
+  const crossLinks = (edges || []).filter(
+    (e) => !treeEdgeKeys.has(`${e.from_node_id}->${e.to_node_id}`)
+  );
+  const crossLinkLines = crossLinks
+    .map((e) => {
+      const from = byId.get(e.from_node_id);
+      const to = byId.get(e.to_node_id);
+      if (!from || !to) return null;
+      return `- ${from.title} —(${e.relation || "relates_to"})→ ${to.title}`;
+    })
+    .filter(Boolean);
+
+  return [
+    `# ${title || "Untitled thread"}`,
+    "",
+    "## Map",
+    "",
+    lines.join("\n"),
+    ...(crossLinkLines.length ? ["", "## Additional connections", "", crossLinkLines.join("\n")] : []),
+    "",
+  ].join("\n");
+}
+
+export function exportMarkdown(md, filename) {
+  if (!md) return;
+  triggerDownload(new Blob([md], { type: "text/markdown;charset=utf-8" }), filename);
+}
+
 function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

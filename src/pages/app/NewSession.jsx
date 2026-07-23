@@ -47,10 +47,20 @@ export default function NewSession() {
     if (!title) setTitle(file.name.replace(/\.[^.]+$/, ""));
   };
 
+  const checkQuota = async (sessionType) => {
+    const res = await base44.functions.invoke("check-quota", {
+      session_type: sessionType,
+    });
+    if (!res.data.allowed) {
+      throw new Error(res.data.reason);
+    }
+  };
+
   const startTalking = async () => {
     setError("");
     setBusy(true);
     try {
+      await checkQuota("personal");
       const session = await base44.entities.Session.create({
         type: "personal",
         title:
@@ -82,6 +92,7 @@ export default function NewSession() {
     setError("");
     setBusy(true);
     try {
+      await checkQuota("meeting");
       const res = await base44.functions.invoke("recall-start-bot", {
         meeting_url: meetingUrl.trim(),
         title,
@@ -104,6 +115,7 @@ export default function NewSession() {
     }
     setBusy(true);
     try {
+      await checkQuota("meeting");
       const session = await base44.entities.Session.create({
         type: "meeting",
         title:

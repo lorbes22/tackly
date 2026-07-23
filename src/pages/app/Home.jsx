@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
-import { Bot, Mic, FileText, Users as UsersIcon, User } from "lucide-react";
+import { Bot, Mic, FileText, User } from "lucide-react";
 
 const Session = base44.entities.Session;
 
@@ -19,8 +19,14 @@ const statusStyle = {
   complete: "bg-paper-sunken text-ink-soft",
 };
 
+const captureKind = {
+  mic_live: { label: "Personal", Icon: User },
+  bot_live: { label: "Meeting", Icon: Bot },
+  import: { label: "Imported transcript", Icon: FileText },
+};
+
 function SessionCard({ session }) {
-  const Icon = session.type === "meeting" ? UsersIcon : User;
+  const { label, Icon } = captureKind[session.capture_source] || captureKind.mic_live;
   return (
     <Link
       to={`/app/board/${session.id}`}
@@ -31,8 +37,7 @@ function SessionCard({ session }) {
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium text-ink">{session.title}</p>
         <p className="text-sm text-ink-soft">
-          {session.type === "meeting" ? "Meeting" : "Personal"} ·{" "}
-          {formatDate(session.created_date)}
+          {label} · {formatDate(session.created_date)}
         </p>
       </div>
       <span

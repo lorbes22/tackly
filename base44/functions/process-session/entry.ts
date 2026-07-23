@@ -1,5 +1,22 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
 import { classifyWithTool, makeAnthropic } from "../../shared/claude.ts";
+import { checkQuota, computeBilledMs } from "../../shared/billing.ts";
+
+// All utterances for the session, used to finalize billed_ms the moment the
+// session completes — the same span-of-timestamps formula for every capture
+// source (see shared/billing.ts).
+async function finalizeBilledMs(
+  // deno-lint-ignore no-explicit-any
+  base44: any,
+  session_id: string,
+): Promise<number> {
+  const all = await base44.entities.Utterance.filter(
+    { session_id },
+    "start_ms",
+    5000,
+  );
+  return computeBilledMs(all);
+}
 
 // Tier-1 classification. Calls Claude Haiku 4.5 directly (not Base44's
 // InvokeLLM) — fast, and the static system prompt is prompt-cached since it's
@@ -136,7 +153,60 @@ Correct decisions (all for this one utterance):
 2. new, type=idea, temp_id="i1", title="UGC platform idea", parent="temp:t1", relation="leads_to"
 3. new, type=idea, temp_id="i2", title="Search engine idea", parent="temp:t1", relation="leads_to"
 WRONG: cramming "UGC platform and search engine" into one idea node, or into the topic's summary.
-Later, a separate utterance "the risk with the search engine is it's complex to build" arrives in a LATER turn — by then i1/i2 are real existing nodes with real ids; create a new risk node with parent = the search engine idea's real id (not the UGC idea, not the topic, not whatever node happens to be most recent).`;
+Later, a separate utterance "the risk with the search engine is it's complex to build" arrives in a LATER turn — by then i1/i2 are real existing nodes with real ids; create a new risk node with parent = the search engine idea's real id (not the UGC idea, not the topic, not whatever node happens to be most recent).
+
+MORE WORKED EXAMPLES (connections are the part most likely to go wrong — study these):
+
+Example: picking the right existing parent among several open nodes.
+Existing nodes: id=n1 idea "UGC platform idea", id=n2 idea "Search engine idea", id=n3 risk "Search engine is complex to build" (parent n2).
+Utterance: "And Google's already dominant there, so that's another risk on top of the complexity."
+Correct: new, type=risk, title="Google dominance in search", parent=n2 (the search engine idea — the risk is ABOUT search, same as n3), relation="leads_to". NOT parent=n3 just because n3 is the most recently created node — n3 and this new risk are siblings under n2, not parent/child of each other, since this risk isn't building on n3's specific complexity point, it's a separate concern about the same idea.
+
+Example: "answers" closing out an open question.
+Existing nodes: id=q1 question "Who owns the pricing page?"
+Utterance: "Actually, that's on Priya — she owns pricing end to end."
+Correct: new, type=decision (or action if it reads as an assignment), title="Priya owns pricing page", parent=q1, relation="answers". This is also a case where the question's status should be considered resolved by this answer (status handling is separate from classification, don't set it yourself).
+
+Example: "contradicts" — a genuine pushback, not just a new opinion.
+Existing nodes: id=o1 opinion "UGC platform has fewer competitors than search"
+Utterance: "Actually I don't think that's true — TikTok, Instagram, and every social app are all UGC competitors."
+Correct: new, type=opinion, title="UGC platform has many competitors", parent=o1, relation="contradicts". Use "contradicts" specifically because this directly disputes o1's claim — a merely-related new opinion on the same topic that doesn't dispute anything would be "relates_to" or "leads_to" instead.
+
+Example: "blocks" — a risk threatening a decision/action, not just related to it.
+Existing nodes: id=d1 decision "Ship the UGC platform beta by Friday"
+Utterance: "We can't actually ship Friday, legal still hasn't signed off on the content moderation policy."
+Correct: new, type=risk, title="Legal sign-off missing for moderation policy", parent=d1, relation="blocks" (this risk directly threatens d1's Friday commitment — stronger than "relates_to").
+
+Example: independent branch vs. same-subject alternative (the distinction the rules above call out).
+Existing nodes: id=t1 topic "Onboarding redesign"
+Utterance A (same subject, connect): "Another option for onboarding is a single combined question instead of three separate screens." → new, type=idea, parent=t1, relation="expands" — an alternative onboarding approach, not a new subject.
+Utterance B (genuine subject change, independent): "Switching gears — we also need to talk about the hiring plan for Q2." → new, type=topic, parent="independent" — hiring is a different subject from onboarding, so this starts a new root branch even though it's the same conversation/session.
+
+CLASSIFICATION BOUNDARY EXAMPLES (bucket 1 vs 2 vs 3, and evidence vs opinion, are the easiest calls to get subtly wrong):
+
+Example: evidence vs. opinion, same topic, back to back.
+Utterance A: "Activation dropped to 34% last month." → evidence (a stated, checkable number — no hedge word, no judgment).
+Utterance B: "I think that's because onboarding is too long." → opinion (a causal claim the speaker believes, not a verified fact — "I think" is the signal, but even without it, an unverified causal claim about WHY something happened is opinion, not evidence).
+Utterance C: "The onboarding flow has 7 screens." → evidence again (a countable, checkable fact, back to objective ground).
+
+Example: waffle vs. skip — both look like "nothing important" but only one has content worth a node.
+"Okay, so—" / "right, right" / "let's see" → SKIP, pure filler, no node at all.
+"Ha, sorry, my coffee's gone cold, one sec" → WAFFLE — there's an actual remark with content (coffee, a pause), just no analytical weight. Give it a waffle node so the transcript has a placeholder there, don't silently drop it like true filler.
+"Not sure this is even useful to bring up, but whatever, we should probably think about pricing at some point" → this one is NOT waffle despite the hedging — "we should think about pricing" is a real idea/topic under all the self-deprecation. Classify the substance (idea or topic), don't let the hedge language downgrade it to waffle.
+
+Example: don't default-attach to the most recent node just because it's most recent.
+Existing nodes in creation order: id=a1 idea "Redesign the onboarding flow", id=a2 risk "Engineering capacity is tight this quarter" (parent a1).
+Utterance: "Also, we should get design's input on the new pricing page before launch."
+Correct: new, type=idea, title="Get design input on pricing page", parent="independent" (or connects to a pricing topic if one exists) — this is about PRICING, not onboarding or engineering capacity, so it must NOT parent to a2 (the most recent node) just because it came right after it in the transcript. Judge relevance by subject matter, never by recency alone — this was a real bug in an earlier version of this classifier.
+
+Example: a harder multi-item utterance where siblings AND a cross-branch reference both appear in one turn.
+Existing nodes: id=t1 topic "Two project ideas to explore", id=i1 idea "UGC platform idea" (parent t1), id=i2 idea "Search engine idea" (parent t1).
+Utterance: "Okay so for the UGC platform there are two open questions — do we allow anonymous posting, and how do we handle moderation at launch — and separately, on the search engine side, we still haven't picked a name."
+Correct decisions (all for this one utterance):
+1. new, type=question, temp_id="q1", title="Allow anonymous posting?", parent=i1 (UGC platform, not the topic, not search engine), relation="expands"
+2. new, type=question, temp_id="q2", title="Moderation approach at launch", parent=i1, relation="expands"
+3. new, type=question, temp_id="q3", title="Pick a name for search engine", parent=i2 (the OTHER idea — "separately, on the search engine side" is an explicit subject switch back to i2, not a sibling of q1/q2 under i1)
+WRONG: parenting q3 to q1 or q2 just because they were emitted in the same response, or parenting all three questions to t1 instead of the specific idea each one is actually about. Read the utterance's own signposting ("separately, on the X side") — it tells you exactly when the subject shifts between existing branches, even within one utterance.`;
 
 // Volatile per-call data goes AFTER the cached prefix (in the user message).
 function buildUserPrompt(
@@ -281,10 +351,27 @@ Deno.serve(async (req) => {
           await base44.entities.Session.update(session_id, {
             status: "complete",
             ended_at: new Date().toISOString(),
+            billed_ms: await finalizeBilledMs(base44, session_id),
           });
         }
       }
       return Response.json({ done: true, created: 0, processed: 0 });
+    }
+
+    // Quota backstop: utterances in this batch are already claimed (spoken/
+    // pasted content is what's being billed, not node output), but skip the
+    // paid classification call once the owner is over their monthly minutes
+    // — this is the real cost control, since the pre-create checkQuota calls
+    // (check-quota, recall-start-bot) only gate NEW sessions, not an
+    // already-running one that crosses the line mid-session.
+    const quota = await checkQuota(base44, user, session.type === "meeting" ? "meeting" : "personal");
+    if (!quota.allowed) {
+      base44.entities.UsageEvent.create({
+        user_id: user.id,
+        event_type: "plan_limit_hit",
+        meta: { session_id, reason: quota.reason },
+      }).catch(() => {});
+      return Response.json({ done: false, created: 0, processed: batch.length, quota_exceeded: true });
     }
 
     // Read node context AFTER claiming, so we see the latest board. Hidden
@@ -511,6 +598,7 @@ Deno.serve(async (req) => {
       await base44.entities.Session.update(session_id, {
         status: "complete",
         ended_at: new Date().toISOString(),
+        billed_ms: await finalizeBilledMs(base44, session_id),
       });
     }
 

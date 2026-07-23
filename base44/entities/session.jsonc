@@ -62,6 +62,12 @@
       "type": "string",
       "format": "date-time",
       "description": "When the Tier-2 consolidation pass last ran"
+    },
+    "billed_ms": {
+      "type": "integer",
+      "default": 0,
+      "minimum": 0,
+      "description": "Transcript minutes (in ms) this session counts against the owner's monthly quota — the span of utterance timestamps, computed once when the session completes. Same metric regardless of capture source (mic, bot, or import)."
     }
   },
   "required": ["type", "title"],

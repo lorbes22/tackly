@@ -79,10 +79,12 @@ export function Divider() {
 export function Field({ label, ...props }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-sm font-medium text-ink">{label}</span>
+      <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-wide text-ink-soft">
+        {label}
+      </span>
       <input
         {...props}
-        className="h-11 w-full rounded-xl border border-line bg-paper-raised px-3.5 text-sm text-ink placeholder:text-ink-faint focus:border-periwinkle"
+        className="h-11 w-full rounded-xl border border-line bg-paper-raised px-3.5 text-sm text-ink placeholder:text-ink-faint transition-colors focus:border-periwinkle focus:outline-none focus:ring-2 focus:ring-periwinkle-tint"
       />
     </label>
   );

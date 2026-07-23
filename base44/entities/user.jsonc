@@ -1,0 +1,14 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "plan_id": {
+      "type": "string",
+      "description": "Plan this user is subscribed to (references a Plan record's id). Empty/missing means the Free plan."
+    }
+  },
+  "rls": {
+    "read": { "user_condition": { "role": "admin" } },
+    "update": { "user_condition": { "role": "admin" } }
+  }
+}

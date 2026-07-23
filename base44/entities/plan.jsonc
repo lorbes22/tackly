@@ -4,21 +4,24 @@
   "properties": {
     "name": {
       "type": "string",
-      "description": "Plan display name (e.g. Free, Pro, Team)"
+      "description": "Plan display name (e.g. Free, Plus, Pro)"
     },
     "price_monthly": {
       "type": "number",
       "default": 0,
       "minimum": 0,
-      "description": "Monthly price in USD"
+      "description": "Monthly price in GBP"
     },
-    "node_limit": {
+    "minute_limit": {
       "type": "integer",
-      "description": "Max nodes a user on this plan can create per month (null-ish 0 = unlimited)"
+      "default": 0,
+      "minimum": 0,
+      "description": "Transcript minutes allowed per calendar month (personal capture + meetings + imports, all combined). 0 = unlimited."
     },
-    "session_limit": {
-      "type": "integer",
-      "description": "Max sessions per month (0 = unlimited)"
+    "allows_meetings": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this plan can start/import meeting sessions at all (independent of minute quota) — the Free plan sets this false."
     },
     "features": {
       "type": "array",

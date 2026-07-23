@@ -90,15 +90,23 @@ export default function Login() {
           autoComplete="email"
           required
         />
-        <Field
-          label="Password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="••••••••"
-          autoComplete="current-password"
-          required
-        />
+        <div>
+          <Field
+            label="Password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            autoComplete="current-password"
+            required
+          />
+          <Link
+            to="/forgot-password"
+            className="mt-1.5 block text-right text-xs font-medium text-periwinkle hover:text-periwinkle-deep"
+          >
+            Forgot password?
+          </Link>
+        </div>
         <ErrorNote>{error}</ErrorNote>
         <SubmitButton busy={busy}>Log in</SubmitButton>
       </form>

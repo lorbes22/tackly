@@ -9,13 +9,15 @@ import { NodeDetailPanel } from "@/components/NodeDetailPanel";
 import { MicBar, BotBar, LiveUtteranceFeed } from "@/components/LiveBars";
 import { usePanZoom } from "@/lib/usePanZoom";
 import { computeLayout } from "@/lib/treeLayout";
-import { boardToSvg, exportPng, exportSvg } from "@/lib/boardExport";
+import { boardToSvg, boardToMarkdown, exportPng, exportSvg, exportMarkdown } from "@/lib/boardExport";
 import {
   ArrowLeft,
   Download,
   FileCode,
+  FileText,
   Image,
   Maximize2,
+  Mic,
   PanelRightClose,
   PanelRightOpen,
   ZoomIn,
@@ -38,6 +40,10 @@ export default function Board() {
   const [searchParams] = useSearchParams();
   const [session, setSession] = useState(null);
   const [ending, setEnding] = useState(false);
+  // A completed meeting can be continued by voice afterward — Recall's bot
+  // never has hold-to-talk, but once it's left the call, the same board can
+  // switch to mic capture like a personal thread would.
+  const [micContinuing, setMicContinuing] = useState(false);
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [utterances, setUtterances] = useState([]);
@@ -357,8 +363,10 @@ export default function Board() {
   );
 
   const isLive = session?.status === "active";
-  const isMicLive = isLive && session?.capture_source === "mic_live";
-  const isBotLive = isLive && session?.capture_source === "bot_live";
+  const isMicLive = isLive && (session?.capture_source === "mic_live" || micContinuing);
+  const isBotLive = isLive && session?.capture_source === "bot_live" && !micContinuing;
+  const canContinueByVoice =
+    session?.capture_source === "bot_live" && session?.status === "complete" && !micContinuing;
 
   // Fallback ops poll while live: applies any op not already seen (applyOp
   // dedups by id), so a dropped realtime event is caught — never a refetch.
@@ -508,7 +516,9 @@ export default function Board() {
   const endLiveSession = useCallback(async () => {
     setEnding(true);
     try {
-      if (session?.capture_source === "bot_live") {
+      // A mic continuation on an originally bot_live session ends like any
+      // other mic session — the bot itself is long gone, nothing to tell it.
+      if (session?.capture_source === "bot_live" && !micContinuing) {
         await base44.functions.invoke("recall-stop-bot", { session_id: sessionId });
       } else {
         await Session.update(sessionId, {
@@ -516,11 +526,23 @@ export default function Board() {
           ended_at: new Date().toISOString(),
         });
       }
+      setMicContinuing(false);
       await refreshSession(); // status flip triggers the wrap-up pass below
     } finally {
       setEnding(false);
     }
-  }, [session, sessionId, refreshSession]);
+  }, [session, sessionId, refreshSession, micContinuing]);
+
+  // Re-open a completed meeting for mic capture — same lifecycle a personal
+  // session uses (active -> processing -> complete), just re-entered from
+  // "complete" instead of started fresh. billed_ms accumulates correctly
+  // since it's recomputed from ALL utterances in the session on completion.
+  const startMicContinuation = useCallback(async () => {
+    await Session.update(sessionId, { status: "active" });
+    setMicContinuing(true);
+    micStartRef.current = Date.now();
+    await refreshSession();
+  }, [sessionId, refreshSession]);
 
   // Auto-select a node when arriving from search (?node=...)
   const wantedNodeRef = useRef(searchParams.get("node"));
@@ -703,13 +725,17 @@ export default function Board() {
   const runExport = useCallback(
     async (format) => {
       setExportOpen(false);
-      const svg = boardToSvg(nodes, edges, sizes, positions);
-      if (!svg) return;
       const base = (session?.title || "tackly-board")
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)/g, "")
         .slice(0, 60) || "tackly-board";
+      if (format === "md") {
+        exportMarkdown(boardToMarkdown(session?.title, nodes, edges), `${base}.md`);
+        return;
+      }
+      const svg = boardToSvg(nodes, edges, sizes, positions);
+      if (!svg) return;
       if (format === "svg") exportSvg(svg, `${base}.svg`);
       else await exportPng(svg, `${base}.png`);
     },
@@ -805,6 +831,12 @@ export default function Board() {
                     className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-sm font-medium text-ink hover:bg-note-lavender"
                   >
                     <FileCode className="h-4 w-4" /> SVG vector
+                  </button>
+                  <button
+                    onClick={() => runExport("md")}
+                    className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-sm font-medium text-ink hover:bg-note-lavender"
+                  >
+                    <FileText className="h-4 w-4" /> Markdown
                   </button>
                 </div>
               </>
@@ -947,6 +979,15 @@ export default function Board() {
             ending={ending}
             hasUtterances={utterances.length > 0}
           />
+        )}
+        {canContinueByVoice && (
+          <button
+            onClick={startMicContinuation}
+            className="absolute inset-x-0 bottom-5 z-10 mx-auto flex h-12 w-fit items-center gap-2 rounded-xl border-2 border-ink bg-note-lavender px-6 text-sm font-bold text-ink shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+          >
+            <Mic className="h-4 w-4" />
+            Continue this thread by voice
+          </button>
         )}
 
         {/* Right panel: node detail wins over transcript */}

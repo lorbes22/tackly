@@ -1,4 +1,5 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
+import { checkQuota } from "../../shared/billing.ts";
 
 // Creates the session, then sends a Recall bot into the pasted meeting link.
 // The bot streams finalized transcript events to recall-webhook, authenticated
@@ -19,7 +20,7 @@ Deno.serve(async (req) => {
         { status: 500 },
       );
     }
-    const region = Deno.env.get("RECALL_REGION") || "us-east-1";
+    const region = Deno.env.get("RECALL_REGION") || "eu-central-1";
 
     const { meeting_url, title } = await req.json();
     if (!meeting_url || !/^https?:\/\//.test(meeting_url)) {
@@ -27,6 +28,11 @@ Deno.serve(async (req) => {
         { error: "meeting_url must be a valid meeting link" },
         { status: 400 },
       );
+    }
+
+    const quota = await checkQuota(base44, user, "meeting");
+    if (!quota.allowed) {
+      return Response.json({ error: quota.reason }, { status: 402 });
     }
 
     const webhookToken = crypto.randomUUID();
