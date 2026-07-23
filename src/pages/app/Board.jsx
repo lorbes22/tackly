@@ -292,6 +292,21 @@ export default function Board() {
     setSizes(next);
   }, [nodes]);
 
+  // User-initiated ops: apply locally now, append to the log so it stays a
+  // complete record and other viewers get the change via realtime. Declared
+  // early because the live capture handlers below depend on it.
+  const appendUserOp = useCallback(
+    (op_type, payload) =>
+      SessionOp.create({
+        session_id: sessionId,
+        seq: lastSeqRef.current + 1,
+        op_type,
+        payload,
+        owner_email: user?.email,
+      }).catch(() => {}),
+    [sessionId, user]
+  );
+
   // Live capture: fire one classification call per utterance the instant it
   // finalizes — in PARALLEL, not a serial queue. The backend atomically claims
   // each utterance, so overlapping calls never double-process or strand rows
@@ -626,20 +641,6 @@ export default function Board() {
       window.addEventListener("pointerup", onNodeDragEnd);
     },
     [positions, onNodeDragMove, onNodeDragEnd]
-  );
-
-  // User-initiated ops: apply locally now, append to the log so it stays a
-  // complete record and other viewers get the change via realtime.
-  const appendUserOp = useCallback(
-    (op_type, payload) =>
-      SessionOp.create({
-        session_id: sessionId,
-        seq: lastSeqRef.current + 1,
-        op_type,
-        payload,
-        owner_email: user?.email,
-      }).catch(() => {}),
-    [sessionId, user]
   );
 
   const applyStatus = useCallback(
