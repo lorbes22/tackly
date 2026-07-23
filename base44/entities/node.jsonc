@@ -46,6 +46,11 @@
       "default": false,
       "description": "Soft-delete / board-visibility toggle, separate from status. Hidden nodes keep their record + utterance links but never render and aren't re-attach targets."
     },
+    "provisional": {
+      "type": "boolean",
+      "default": false,
+      "description": "True while the node is still forming (raw placeholder -> rough guess); false once end_of_turn finalizes it. Renders in a dashed 'forming' state, distinct from an open Question/Risk."
+    },
     "confidence": {
       "type": "number",
       "minimum": 0,

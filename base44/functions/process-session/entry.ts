@@ -196,10 +196,11 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { session_id, utterance_ids } = await req.json();
+    const { session_id, utterance_ids, provisional_node_id } = await req.json();
     if (!session_id) {
       return Response.json({ error: "session_id is required" }, { status: 400 });
     }
+    let provisionalConsumed = false;
 
     // RLS scopes reads to the caller, so a foreign session comes back not-found
     const session = await base44.entities.Session.get(session_id);
@@ -283,7 +284,10 @@ Deno.serve(async (req) => {
       )
       .sort((a, b) => (a.start_ms ?? 0) - (b.start_ms ?? 0))
       .slice(-3);
-    const visibleNodes = existingNodes.filter((n) => !n.hidden);
+    // Exclude hidden AND still-forming (provisional) nodes: a placeholder isn't
+    // a stable attach target, and crucially the node we're finalizing this turn
+    // must not be offered back to the classifier as something to attach to.
+    const visibleNodes = existingNodes.filter((n) => !n.hidden && !n.provisional);
     const openList = visibleNodes.map((n) => ({
       id: n.id,
       type: n.type,
@@ -371,17 +375,33 @@ Deno.serve(async (req) => {
         const parentId = resolveParent(d.parent);
         const relation = RELATIONS.includes(d.relation) ? d.relation : "leads_to";
         const placement = placeNode(placed, parentId);
-        const node = await base44.entities.Node.create({
-          owner_user_id: user.id,
-          session_id,
+        const fields = {
           type: d.type,
           title: d.title.slice(0, 90),
           summary: (d.summary || "").slice(0, 600),
           status: OPEN_STATUS_TYPES.has(d.type) ? "open" : "na",
           confidence: typeof d.confidence === "number" ? d.confidence : undefined,
           parent_id: parentId || undefined,
+          provisional: false,
           ...placement,
-        });
+        };
+        // Stage 3: if a provisional node was forming for this utterance, finalize
+        // it IN PLACE (same record) instead of creating a new one — position,
+        // connections and animations stay stable (PLAN.md provisional nodes).
+        let node;
+        if (provisional_node_id && d.index === 0 && !provisionalConsumed) {
+          provisionalConsumed = true;
+          await base44.entities.Node.update(provisional_node_id, fields);
+          node = { id: provisional_node_id, session_id, owner_user_id: user.id, ...fields };
+          await appendOp("update_node", { node_id: provisional_node_id, patch: fields, node }, baseMs);
+        } else {
+          node = await base44.entities.Node.create({
+            owner_user_id: user.id,
+            session_id,
+            ...fields,
+          });
+          await appendOp("create_node", { node }, baseMs);
+        }
         newNodeByIndex.set(d.index, node.id);
         placed.push({
           id: node.id,
@@ -390,8 +410,7 @@ Deno.serve(async (req) => {
           parent_id: parentId,
         });
         created++;
-        // Push the op the moment the node exists — no waiting for the batch
-        await appendOp("create_node", { node }, baseMs);
+        // (create_node / update_node op already emitted above.)
         // Draw the connector from parent to child, live
         if (parentId) {
           const edge = await base44.entities.NodeEdge.create({
@@ -430,6 +449,14 @@ Deno.serve(async (req) => {
           meta: { session_id, node_id: target.id, action: d.action },
         });
       }
+    }
+
+    // False start: a provisional node was forming but the final pass decided
+    // this utterance was filler or folded into an existing node — remove it so
+    // the board doesn't keep a stray placeholder.
+    if (provisional_node_id && !provisionalConsumed) {
+      await base44.entities.Node.update(provisional_node_id, { hidden: true }).catch(() => {});
+      await appendOp("hide_node", { node_id: provisional_node_id }, batch[0]?.start_ms ?? Date.now());
     }
 
     // Utterances were already claimed (processed=true) up front; here we just

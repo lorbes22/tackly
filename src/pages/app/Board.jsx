@@ -185,6 +185,14 @@ export default function Board() {
         );
         break;
       }
+      case "update_node": {
+        if (!payload.node_id) return;
+        const patch = payload.patch || {};
+        setNodes((prev) =>
+          prev.map((n) => (n.id === payload.node_id ? { ...n, ...patch } : n))
+        );
+        break;
+      }
       case "add_note": {
         if (!payload.node_id || !payload.note_id) return;
         setNoteCounts((prev) => {
@@ -290,13 +298,14 @@ export default function Board() {
   // (PLAN.md "compute in parallel, commit in order"). Board changes arrive as
   // ops via realtime; nothing here re-fetches the board.
   const liveProcess = useCallback(
-    (utteranceId) => {
+    (utteranceId, provisionalNodeId) => {
       inFlightRef.current += 1;
       setPhase("mapping");
       base44.functions
         .invoke("process-session", {
           session_id: sessionId,
           utterance_ids: [utteranceId],
+          ...(provisionalNodeId ? { provisional_node_id: provisionalNodeId } : {}),
         })
         .then((res) => {
           sinceConsolidateRef.current += res.data?.processed ?? 0;
@@ -378,10 +387,81 @@ export default function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isBotLive, sessionId, liveProcess]);
 
-  // Mic sessions: a finalized turn becomes an utterance, then classification
+  // Mic sessions: staged provisional nodes (PLAN.md).
+  // Stage 1 — instant raw placeholder (no LLM) on the first partial words.
+  // Stage 2 — debounced classify-partial rough guess (settles early ~90%).
+  // Stage 3 — end_of_turn finalizes the SAME node record via process-session.
   const micStartRef = useRef(Date.now());
+  const formingIdRef = useRef(null);
+  const partialTextRef = useRef("");
+  const stage2TimerRef = useRef(null);
+  const [settledIds, setSettledIds] = useState(() => new Set());
+
+  const handleMicPartial = useCallback(
+    (text) => {
+      const t = (text || "").trim();
+      partialTextRef.current = t;
+      if (t.split(/\s+/).length < 3) return; // wait for a few words
+
+      if (!formingIdRef.current) {
+        formingIdRef.current = "pending"; // guard against a create race
+        (async () => {
+          try {
+            const node = await Node.create({
+              session_id: sessionId,
+              owner_email: user?.email,
+              type: "aside",
+              title: t.slice(0, 90),
+              summary: "",
+              status: "na",
+              provisional: true,
+            });
+            formingIdRef.current = node.id;
+            setNodes((prev) =>
+              prev.some((n) => n.id === node.id) ? prev : [...prev, node]
+            );
+            appendUserOp("create_node", { node });
+          } catch {
+            formingIdRef.current = null;
+          }
+        })();
+      } else if (formingIdRef.current !== "pending") {
+        const id = formingIdRef.current;
+        setNodes((prev) =>
+          prev.map((n) => (n.id === id ? { ...n, title: t.slice(0, 90) } : n))
+        );
+      }
+
+      // Stage 2: debounced rough guess
+      clearTimeout(stage2TimerRef.current);
+      stage2TimerRef.current = setTimeout(async () => {
+        const id = formingIdRef.current;
+        if (!id || id === "pending" || settledIds.has(id)) return;
+        try {
+          const res = await base44.functions.invoke("classify-partial", {
+            session_id: sessionId,
+            node_id: id,
+            text: partialTextRef.current,
+          });
+          if (res.data?.ok && (res.data.confidence ?? 0) >= 0.9) {
+            setSettledIds((prev) => new Set(prev).add(id));
+          }
+        } catch {
+          // ignore — stage 3 is authoritative regardless
+        }
+      }, 500);
+    },
+    [sessionId, user, appendUserOp, settledIds]
+  );
+
   const handleMicFinal = useCallback(
     async (turn) => {
+      clearTimeout(stage2TimerRef.current);
+      const provId =
+        formingIdRef.current && formingIdRef.current !== "pending"
+          ? formingIdRef.current
+          : null;
+      formingIdRef.current = null;
       try {
         const utt = await Utterance.create({
           session_id: sessionId,
@@ -393,7 +473,7 @@ export default function Board() {
           processed: false,
         });
         setUtterances((prev) => [...prev, utt]);
-        liveProcess(utt.id);
+        liveProcess(utt.id, provId);
       } catch {
         // dropped utterance — the transcript panel simply won't show it
       }
@@ -779,6 +859,7 @@ export default function Board() {
                     }}
                     node={node}
                     noteCount={noteCounts[node.id] || 0}
+                    forming={!!node.provisional && !settledIds.has(node.id)}
                     animate={initialNodeIds.current && !initialNodeIds.current.has(node.id)}
                     className={selectedId === node.id ? "shadow-brutal-lg ring-2 ring-periwinkle" : ""}
                     onNotesClick={(id) => {
@@ -842,7 +923,12 @@ export default function Board() {
 
         {isLive && <LiveUtteranceFeed utterances={utterances} />}
         {isMicLive && (
-          <MicBar onFinalTurn={handleMicFinal} onEnd={endLiveSession} ending={ending} />
+          <MicBar
+            onFinalTurn={handleMicFinal}
+            onPartial={handleMicPartial}
+            onEnd={endLiveSession}
+            ending={ending}
+          />
         )}
         {isBotLive && (
           <BotBar

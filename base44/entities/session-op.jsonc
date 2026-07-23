@@ -19,7 +19,8 @@
         "update_status",
         "merge_nodes",
         "add_note",
-        "hide_node"
+        "hide_node",
+        "update_node"
       ],
       "description": "Discrete board operation"
     },

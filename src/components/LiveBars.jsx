@@ -87,9 +87,10 @@ function TacklingIndicator() {
 
 // Bottom-center live capture controls for the board.
 
-export function MicBar({ onFinalTurn, onEnd, ending }) {
+export function MicBar({ onFinalTurn, onPartial, onEnd, ending }) {
   const { state, partial, error, startHold, endHold } = useHoldToTalk({
     onFinalTurn,
+    onPartial,
   });
 
   // Hold Space to talk (ignoring inputs/buttons focus interactions)

@@ -23,7 +23,7 @@ const STATUS_LABELS = {
 };
 
 export const NodeCard = forwardRef(function NodeCard(
-  { node, onClick, onNotesClick, animate = false, className = "", noteCount = 0 },
+  { node, onClick, onNotesClick, animate = false, className = "", noteCount = 0, forming = false },
   ref
 ) {
   const style = NODE_TYPE_STYLES[node.type] || NODE_TYPE_STYLES.idea;
@@ -31,6 +31,9 @@ export const NodeCard = forwardRef(function NodeCard(
     node.status === "open" && (node.type === "question" || node.type === "risk");
   const statusLabel =
     node.status && node.status !== "na" ? STATUS_LABELS[node.status] : null;
+  // A still-forming (provisional) node is dashed + pulsing — deliberately
+  // distinct from an open Question/Risk, which is dashed but steady.
+  const dashed = forming || isOpen;
 
   return (
     <button
@@ -39,8 +42,8 @@ export const NodeCard = forwardRef(function NodeCard(
       onClick={onClick}
       style={{ "--note-rotation": `${node.rotation_deg || 0}deg` }}
       className={`group/node relative w-56 rounded-note border-2 border-ink p-3.5 text-left shadow-brutal transition-all [transform:rotate(var(--note-rotation))] hover:shadow-brutal-lg hover:!opacity-100 focus-visible:shadow-brutal-lg ${
-        isOpen ? "border-dashed" : ""
-      } ${style.muted ? "opacity-70" : ""} ${style.fill} ${animate ? "animate-pop-in" : ""} ${className}`}
+        dashed ? "border-dashed" : ""
+      } ${forming ? "animate-forming" : ""} ${style.muted ? "opacity-70" : ""} ${style.fill} ${animate ? "animate-pop-in" : ""} ${className}`}
     >
       {noteCount > 0 && (
         <span

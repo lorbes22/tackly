@@ -53,7 +53,7 @@ class TacklyPcm16Encoder extends AudioWorkletProcessor {
 registerProcessor("tackly-pcm16-encoder", TacklyPcm16Encoder);
 `;
 
-export function useHoldToTalk({ onFinalTurn }) {
+export function useHoldToTalk({ onFinalTurn, onPartial }) {
   const [state, setState] = useState("idle"); // idle | connecting | listening
   const [partial, setPartial] = useState("");
   const [error, setError] = useState("");
@@ -64,6 +64,8 @@ export function useHoldToTalk({ onFinalTurn }) {
   const stoppingRef = useRef(false);
   const onFinalRef = useRef(onFinalTurn);
   onFinalRef.current = onFinalTurn;
+  const onPartialRef = useRef(onPartial);
+  onPartialRef.current = onPartial;
 
   const teardown = useCallback(async () => {
     if (stoppingRef.current) return;
@@ -115,6 +117,7 @@ export function useHoldToTalk({ onFinalTurn }) {
           onFinalRef.current?.(turn);
         } else {
           setPartial(turn.transcript);
+          onPartialRef.current?.(turn.transcript);
         }
       });
       transcriber.on("error", (err) => {

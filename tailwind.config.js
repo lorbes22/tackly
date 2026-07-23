@@ -103,12 +103,19 @@ export default {
           '0%, 100%': { transform: 'scaleY(0.35)' },
           '50%': { transform: 'scaleY(1)' },
         },
+        // Forming (provisional) node — a gentle breathing pulse, distinct from
+        // the steady dashed border of an open Question/Risk
+        forming: {
+          '0%, 100%': { opacity: '0.72' },
+          '50%': { opacity: '1' },
+        },
       },
       animation: {
         'pop-in': 'pop-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both',
         'fade-up': 'fade-up 400ms ease-out both',
         'float-away': 'float-away 620ms ease-in forwards',
         'eq-bar': 'eq-bar 900ms ease-in-out infinite',
+        forming: 'forming 1.4s ease-in-out infinite',
       },
     },
   },
