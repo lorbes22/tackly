@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
-import { Mic, FileText, Users as UsersIcon, User } from "lucide-react";
+import { Bot, Mic, FileText, Users as UsersIcon, User } from "lucide-react";
 
 const Session = base44.entities.Session;
 
@@ -107,7 +107,7 @@ export default function Home() {
         />
       </div>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+      <div className="mt-8 grid gap-4 sm:grid-cols-3">
         <EntryCard
           to="/app/new?mode=talk"
           icon={Mic}
@@ -116,11 +116,18 @@ export default function Home() {
           body="Hold a key, think out loud, watch the map build itself."
         />
         <EntryCard
+          to="/app/new?mode=bot"
+          icon={Bot}
+          noteColor="bg-note-sky rotate-1"
+          title="Invite the bot"
+          body="Paste a meeting link — the bot joins and maps the call live."
+        />
+        <EntryCard
           to="/app/new?mode=import"
           icon={FileText}
-          noteColor="bg-note-sky rotate-1"
-          title="Add a meeting"
-          body="Paste or upload a transcript and turn it into nodes."
+          noteColor="bg-note-mint -rotate-1"
+          title="Import a transcript"
+          body="Already recorded elsewhere? Paste it in and map it."
         />
       </div>
 

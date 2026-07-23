@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
+import { useAuth } from "@/lib/AuthContext";
 import { Logo } from "@/components/Logo";
 import { NodeCard } from "@/components/NodeCard";
 import { EdgeLayer } from "@/components/EdgeLayer";
 import { NodeDetailPanel } from "@/components/NodeDetailPanel";
+import { MicBar, BotBar } from "@/components/LiveBars";
 import { ArrowLeft, PanelRightClose, PanelRightOpen } from "lucide-react";
 
 const Session = base44.entities.Session;
@@ -17,7 +19,10 @@ const CANVAS_H = 1600;
 
 export default function Board() {
   const { sessionId } = useParams();
+  const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [session, setSession] = useState(null);
+  const [ending, setEnding] = useState(false);
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [utterances, setUtterances] = useState([]);
@@ -117,6 +122,130 @@ export default function Board() {
     }
     setSizes(next);
   }, [nodes]);
+
+  // Live capture: incrementally classify as utterances arrive, without
+  // completing the session (process-session leaves "active" sessions open)
+  const kickTimerRef = useRef(null);
+  const kickProcessing = useCallback(() => {
+    clearTimeout(kickTimerRef.current);
+    kickTimerRef.current = setTimeout(async () => {
+      if (processingRef.current) {
+        kickProcessing(); // pipeline busy — try again shortly
+        return;
+      }
+      processingRef.current = true;
+      setPhase("mapping");
+      try {
+        for (let i = 0; i < 30; i++) {
+          const res = await base44.functions.invoke("process-session", {
+            session_id: sessionId,
+          });
+          if (res.data?.done) break;
+        }
+      } catch {
+        // transient — next utterance retriggers
+      } finally {
+        processingRef.current = false;
+        setPhase(null);
+        setUtterances((prev) => prev.map((u) => ({ ...u, processed: true })));
+      }
+    }, 1500);
+  }, [sessionId]);
+
+  const isLive = session?.status === "active";
+  const isMicLive = isLive && session?.capture_source === "mic_live";
+  const isBotLive = isLive && session?.capture_source === "bot_live";
+
+  // Bot sessions: subscribe to incoming utterances + poll as a fallback
+  // (webhook rows are service-role-created; realtime delivery can lag)
+  useEffect(() => {
+    if (!isBotLive) return;
+    const seen = new Set(utterances.map((u) => u.id));
+    const ingest = (rows) => {
+      const fresh = rows.filter((r) => !seen.has(r.id));
+      if (fresh.length === 0) return;
+      fresh.forEach((r) => seen.add(r.id));
+      setUtterances((prev) =>
+        [...prev, ...fresh].sort((a, b) => (a.start_ms ?? 0) - (b.start_ms ?? 0))
+      );
+      kickProcessing();
+    };
+    const unsub = Utterance.subscribe((event) => {
+      if (event.type === "create" && event.data?.session_id === sessionId) {
+        ingest([{ ...event.data, id: event.id }]);
+      }
+    });
+    const poll = setInterval(async () => {
+      try {
+        ingest(await Utterance.filter({ session_id: sessionId }, "start_ms", 2000));
+      } catch {
+        // keep polling
+      }
+    }, 5000);
+    return () => {
+      unsub();
+      clearInterval(poll);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBotLive, sessionId, kickProcessing]);
+
+  // Mic sessions: a finalized turn becomes an utterance, then classification
+  const micStartRef = useRef(Date.now());
+  const handleMicFinal = useCallback(
+    async (turn) => {
+      try {
+        const utt = await Utterance.create({
+          session_id: sessionId,
+          owner_email: user?.email,
+          speaker_label: "Me",
+          text: turn.transcript,
+          start_ms: Date.now() - micStartRef.current,
+          finalized: true,
+          processed: false,
+        });
+        setUtterances((prev) => [...prev, utt]);
+        kickProcessing();
+      } catch {
+        // dropped utterance — the transcript panel simply won't show it
+      }
+    },
+    [sessionId, user, kickProcessing]
+  );
+
+  const endLiveSession = useCallback(async () => {
+    setEnding(true);
+    try {
+      if (session?.capture_source === "bot_live") {
+        await base44.functions.invoke("recall-stop-bot", { session_id: sessionId });
+      } else {
+        await Session.update(sessionId, {
+          status: "processing",
+          ended_at: new Date().toISOString(),
+        });
+      }
+      await loadAll(); // status flip triggers the wrap-up mapping + linking pass
+    } finally {
+      setEnding(false);
+    }
+  }, [session, sessionId, loadAll]);
+
+  // Auto-select a node when arriving from search (?node=...)
+  const wantedNodeRef = useRef(searchParams.get("node"));
+  useEffect(() => {
+    if (wantedNodeRef.current && nodes.some((n) => n.id === wantedNodeRef.current)) {
+      selectNode(wantedNodeRef.current);
+      wantedNodeRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes]);
+
+  // Live catch-up: unprocessed utterances left over from a previous visit
+  useEffect(() => {
+    if (isLive && utterances.some((u) => !u.processed)) {
+      kickProcessing();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLive]);
 
   // Drive Tier-1 (mapping), then Tier-2 (linking) once
   useEffect(() => {
@@ -301,6 +430,17 @@ export default function Board() {
             )}
           </div>
         </div>
+
+        {isMicLive && (
+          <MicBar onFinalTurn={handleMicFinal} onEnd={endLiveSession} ending={ending} />
+        )}
+        {isBotLive && (
+          <BotBar
+            onEnd={endLiveSession}
+            ending={ending}
+            hasUtterances={utterances.length > 0}
+          />
+        )}
 
         {/* Right panel: node detail wins over transcript */}
         <aside

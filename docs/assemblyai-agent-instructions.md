@@ -15,6 +15,11 @@ This is the concrete build target for Tackly's personal hold-to-talk capture (Ph
   - `mode`: `"balanced"`
   - `speaker_labels`: `true` (harmless default carried over from AssemblyAI's meeting-assistant template; not essential for a single-speaker session, but doesn't cost extra or need removing)
 
+## Connection lifecycle (overcharge safety — build this in from the start, not as an afterthought)
+- The WebSocket connection exists **only while the hold-to-talk key is held down**, not for a whole app session. Open on key-press, send `{"type": "Terminate"}` on key-release. This alone eliminates most abandoned-session risk since there's no idle time for anything to go wrong during.
+- Set `inactivity_timeout` to a tight value (30–60 seconds) as a server-side backup — this catches the case where the client crashes mid-hold and never gets to send `Terminate` cleanly.
+- Add `beforeunload`/`pagehide` browser handlers that attempt a clean close if the tab is closed mid-hold. Best-effort on top of the two points above, not a substitute for either.
+
 ## One correction to make vs. AssemblyAI's own auto-generated recipe
 **Use the official AssemblyAI SDK, not the raw HTTP/WebSocket API.** AssemblyAI's wizard defaults to recommending raw WebSocket unless told otherwise — but their own general integration doc (Section 0, Operating Rule 4, reproduced below) is explicit that the SDK is what correctly handles WebSocket lifecycle and session termination, "which is where most hand-rolled integrations fail." Given the concrete risk that an improperly-closed realtime session keeps billing until the 3-hour cap, the SDK is the safer default here. Use `assemblyai` (Python or Node, matching the project's stack) unless a specific reason comes up during implementation to drop to raw WebSocket.
 
