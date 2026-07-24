@@ -110,18 +110,6 @@ export default {
           '0%, 100%': { opacity: '0.72' },
           '50%': { opacity: '1' },
         },
-        // Onboarding preview: cards pop in and hold, then the whole loop
-        // fades out and resets so it can repeat while the modal is open.
-        'onboard-card': {
-          '0%, 100%': { opacity: '0', transform: 'scale(0.6) translateY(6px)' },
-          '10%, 85%': { opacity: '1', transform: 'scale(1) translateY(0)' },
-          '95%': { opacity: '0' },
-        },
-        'onboard-line': {
-          '0%, 100%': { opacity: '0' },
-          '20%, 85%': { opacity: '1' },
-          '95%': { opacity: '0' },
-        },
       },
       animation: {
         'pop-in': 'pop-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both',
@@ -129,8 +117,6 @@ export default {
         'float-away': 'float-away 620ms ease-in forwards',
         'eq-bar': 'eq-bar 900ms ease-in-out infinite',
         forming: 'forming 1.4s ease-in-out infinite',
-        'onboard-card': 'onboard-card 4.5s ease-in-out infinite',
-        'onboard-line': 'onboard-line 4.5s ease-in-out infinite',
       },
     },
   },

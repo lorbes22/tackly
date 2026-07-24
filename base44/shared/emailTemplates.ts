@@ -3,6 +3,19 @@
 // pure function of sample or real data -> {subject, html}, so the same render path
 // backs both real sends and the admin preview page (admin-preview-email function).
 
+// Same mark as src/components/Logo.jsx's LogoMark, redrawn as a standalone
+// SVG (hardcoded hex colors — email clients can't see Tailwind) and inlined
+// as a data URI so the logo doesn't depend on a hosted asset URL.
+const LOGO_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32">' +
+  '<rect width="64" height="64" rx="16" fill="#6466E9"/>' +
+  '<g transform="rotate(-8 32 32)">' +
+  '<path d="M21,18 L43,18 A6,6 0 0 1 49,24 L49,28 A5,5 0 0 0 49,38 L49,42 A6,6 0 0 1 43,48 L21,48 A6,6 0 0 1 15,42 L15,24 A6,6 0 0 1 21,18 Z" fill="#FAF8F4"/>' +
+  '<rect x="20" y="25" width="22" height="3.4" rx="1.7" fill="#B9AEE8"/>' +
+  '<rect x="20" y="32.5" width="14" height="3.4" rx="1.7" fill="#B9AEE8"/>' +
+  '</g></svg>';
+const LOGO_DATA_URI = `data:image/svg+xml;base64,${btoa(LOGO_SVG)}`;
+
 function layout(previewText: string, bodyHtml: string): string {
   return `<!doctype html>
 <html>
@@ -17,9 +30,10 @@ function layout(previewText: string, bodyHtml: string): string {
     <tr><td align="center">
       <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#FFFFFF;border-radius:16px;overflow:hidden;border:1px solid #E8E4DC;">
         <tr><td style="padding:32px 32px 0 32px;">
-          <div style="font-size:22px;font-weight:800;letter-spacing:-0.01em;color:#26241F;">
-            Tackly<span style="color:#6466E9;">.co</span>
-          </div>
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td style="padding-right:9px;"><img src="${LOGO_DATA_URI}" width="32" height="32" alt="Tackly" style="display:block;border-radius:8px;"></td>
+            <td style="font-size:21px;font-weight:800;letter-spacing:-0.01em;color:#26241F;">tackly</td>
+          </tr></table>
         </td></tr>
         <tr><td style="padding:24px 32px 32px 32px;color:#26241F;font-size:15px;line-height:1.6;">
           ${bodyHtml}
@@ -53,14 +67,14 @@ export const EMAIL_TEMPLATES: Record<string, Template> = {
     description: "Sent right after a new account verifies its email.",
     sampleData: { first_name: "there", app_url: "https://tackly.co/app" },
     render: (d) => ({
-      subject: "Welcome to Tackly",
+      subject: "You're in — let's map some thinking 🧠",
       html: layout(
         "Welcome to Tackly — your first map is minutes away.",
-        `<p style="margin:0 0 12px 0;">Hey ${d.first_name},</p>
-         <p style="margin:0 0 12px 0;">You're in. Tackly turns talking — a solo thinking session, a meeting, a pasted transcript — into a map of ideas, decisions, and open questions as you go.</p>
-         <p style="margin:0 0 12px 0;">Hold the mic and start talking, or paste a transcript to see it mapped out instantly.</p>
+        `<p style="margin:0 0 12px 0;">Hey ${d.first_name}, welcome aboard!</p>
+         <p style="margin:0 0 12px 0;">Tackly's whole job is to eavesdrop — with permission, we promise — on your talking, whether that's a solo ramble, a live meeting, or a transcript you paste in, and turn it into an actual map of ideas, decisions, and open questions.</p>
+         <p style="margin:0 0 12px 0;">Hold the mic and start talking, or throw a transcript at it and watch the map build itself.</p>
          ${button(d.app_url, "Open Tackly")}
-         <p style="margin:16px 0 0 0;color:#6E6A61;font-size:13px;">Free plan includes 30 minutes of capture a month — no card required.</p>`
+         <p style="margin:16px 0 0 0;color:#6E6A61;font-size:13px;">Free plan: 30 minutes of thinking-out-loud a month, no card needed.</p>`
       ),
     }),
   },
@@ -75,11 +89,11 @@ export const EMAIL_TEMPLATES: Record<string, Template> = {
       upgrade_url: "https://tackly.co/app/settings",
     },
     render: (d) => ({
-      subject: `You're close to your ${d.plan_name} plan limit`,
+      subject: `Heads up — you're almost out of thinking room 🧠⏳`,
       html: layout(
         `You've used ${d.used_minutes} of ${d.limit_minutes} minutes this month.`,
         `<p style="margin:0 0 12px 0;">Hey ${d.first_name},</p>
-         <p style="margin:0 0 12px 0;">You've used <strong>${d.used_minutes} of ${d.limit_minutes} minutes</strong> on your ${d.plan_name} plan this month. Once you hit the limit, new capture will pause until next month (or you upgrade).</p>
+         <p style="margin:0 0 12px 0;">You've used <strong>${d.used_minutes} of ${d.limit_minutes} minutes</strong> on your ${d.plan_name} plan this month. Once you hit the ceiling, Tackly stops listening until next month — or you upgrade, no pressure.</p>
          ${button(d.upgrade_url, "Review plans")}`
       ),
     }),
@@ -89,11 +103,11 @@ export const EMAIL_TEMPLATES: Record<string, Template> = {
     description: "Sent after a successful Stripe checkout / plan change.",
     sampleData: { first_name: "there", plan_name: "Plus", app_url: "https://tackly.co/app" },
     render: (d) => ({
-      subject: `You're on the ${d.plan_name} plan`,
+      subject: `Welcome to the ${d.plan_name} club 🎉`,
       html: layout(
         `You're now on the ${d.plan_name} plan.`,
         `<p style="margin:0 0 12px 0;">Hey ${d.first_name},</p>
-         <p style="margin:0 0 12px 0;">You're now on the <strong>${d.plan_name}</strong> plan. Thanks for backing Tackly — your new limits are active immediately.</p>
+         <p style="margin:0 0 12px 0;">You're officially on the <strong>${d.plan_name}</strong> plan. Thanks for backing Tackly — your new limits are live right now, so go talk its ear off.</p>
          ${button(d.app_url, "Open Tackly")}`
       ),
     }),

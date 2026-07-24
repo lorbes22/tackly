@@ -1,9 +1,15 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
-import { Bot, Mic, FileText, User } from "lucide-react";
+import { Bot, Mic, FileText, Trash2, User } from "lucide-react";
+import { UsageBadge } from "@/components/UsageBadge";
 
 const Session = base44.entities.Session;
+const Node = base44.entities.Node;
+const NodeEdge = base44.entities.NodeEdge;
+const Utterance = base44.entities.Utterance;
+const NodeNote = base44.entities.NodeNote;
+const SessionOp = base44.entities.SessionOp;
 
 function formatDate(iso) {
   if (!iso) return "";
@@ -11,6 +17,16 @@ function formatDate(iso) {
     month: "short",
     day: "numeric",
   });
+}
+
+function formatDuration(ms) {
+  if (!ms) return null;
+  const totalMin = Math.round(ms / 60000);
+  if (totalMin < 1) return "<1 min";
+  if (totalMin < 60) return `${totalMin} min`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
 }
 
 const statusStyle = {
@@ -25,21 +41,48 @@ const captureKind = {
   import: { label: "Imported transcript", Icon: FileText },
 };
 
-function SessionCard({ session }) {
+function SessionCard({ session, confirming, deleting, onAskDelete, onCancelDelete, onConfirmDelete }) {
   const { label, Icon } = captureKind[session.capture_source] || captureKind.mic_live;
-  return (
-    <Link
-      to={`/app/board/${session.id}`}
-      className="flex items-center gap-4 rounded-2xl border border-line bg-paper-raised p-4 shadow-note transition-shadow hover:shadow-note-lg">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-periwinkle-tint">
-        <Icon className="h-5 w-5 text-periwinkle-deep" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium text-ink">{session.title}</p>
-        <p className="text-sm text-ink-soft">
-          {label} · {formatDate(session.created_date)}
+  const duration = formatDuration(session.billed_ms);
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-4 rounded-2xl border-2 border-ink bg-note-coral p-4 shadow-note">
+        <p className="min-w-0 flex-1 text-sm font-medium text-ink">
+          Delete "{session.title}" forever? This can't be undone.
         </p>
+        <button
+          onClick={onCancelDelete}
+          disabled={deleting}
+          className="h-9 shrink-0 rounded-lg border-2 border-ink bg-paper-raised px-3 text-sm font-semibold text-ink transition-colors hover:bg-paper-sunken disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirmDelete}
+          disabled={deleting}
+          className="h-9 shrink-0 rounded-lg border-2 border-ink bg-ink px-3 text-sm font-semibold text-paper transition-colors hover:bg-ink/85 disabled:opacity-50"
+        >
+          {deleting ? "Deleting…" : "Delete forever"}
+        </button>
       </div>
+    );
+  }
+
+  return (
+    <div className="group relative flex items-center gap-4 rounded-2xl border border-line bg-paper-raised p-4 shadow-note transition-shadow hover:shadow-note-lg">
+      <Link to={`/app/board/${session.id}`} className="flex min-w-0 flex-1 items-center gap-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-periwinkle-tint">
+          <Icon className="h-5 w-5 text-periwinkle-deep" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium text-ink">{session.title}</p>
+          <p className="text-sm text-ink-soft">
+            {label} · {formatDate(session.created_date)}
+            {duration && <> · {duration}</>}
+          </p>
+        </div>
+      </Link>
       <span
         className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${
           statusStyle[session.status] || statusStyle.complete
@@ -47,7 +90,14 @@ function SessionCard({ session }) {
       >
         {session.status}
       </span>
-    </Link>
+      <button
+        onClick={onAskDelete}
+        title="Delete thread"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-faint opacity-0 transition-colors group-hover:opacity-100 hover:bg-note-coral hover:text-ink"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </div>
   );
 }
 
@@ -68,6 +118,8 @@ export default function Home() {
   const [sessions, setSessions] = useState([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [confirmId, setConfirmId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +138,41 @@ export default function Home() {
     };
   }, []);
 
+  // Deletes a thread and everything hanging off it. There's no cascade at
+  // the DB level, so this walks the same tables Board.jsx reads from
+  // (nodes, edges touching those nodes, utterances, notes, ops) before
+  // removing the Session itself — all under the owner's own RLS.
+  const deleteThread = useCallback(async (session) => {
+    setDeletingId(session.id);
+    try {
+      const [nodes, edges, utterances, notes, ops] = await Promise.all([
+        Node.filter({ session_id: session.id }, "created_date", 2000),
+        NodeEdge.filter({}, "created_date", 3000),
+        Utterance.filter({ session_id: session.id }, "start_ms", 3000),
+        NodeNote.filter({ session_id: session.id }, "-created_date", 2000),
+        SessionOp.filter({ session_id: session.id }, "-seq", 5000),
+      ]);
+      const nodeIds = new Set(nodes.map((n) => n.id));
+      const relatedEdges = edges.filter(
+        (e) => nodeIds.has(e.from_node_id) || nodeIds.has(e.to_node_id)
+      );
+      await Promise.all([
+        ...relatedEdges.map((e) => NodeEdge.delete(e.id)),
+        ...notes.map((n) => NodeNote.delete(n.id)),
+        ...ops.map((o) => SessionOp.delete(o.id)),
+        ...utterances.map((u) => Utterance.delete(u.id)),
+      ]);
+      await Promise.all(nodes.map((n) => Node.delete(n.id)));
+      await Session.delete(session.id);
+      setSessions((prev) => prev.filter((s) => s.id !== session.id));
+    } catch {
+      // best-effort; the thread just stays in the list if something failed
+    } finally {
+      setDeletingId(null);
+      setConfirmId(null);
+    }
+  }, []);
+
   const visible = query
     ? sessions.filter((s) =>
         (s.title || "").toLowerCase().includes(query.toLowerCase())
@@ -102,6 +189,9 @@ export default function Home() {
           <p className="mt-1 text-ink-soft">
             Every session you've mapped, in one place.
           </p>
+          <div className="mt-2">
+            <UsageBadge variant="compact" />
+          </div>
         </div>
         <input
           type="search"
@@ -151,7 +241,18 @@ export default function Home() {
         ) : (
           <div className="space-y-3">
             {visible.map((s) => (
-              <SessionCard key={s.id} session={s} />
+              <SessionCard
+                key={s.id}
+                session={s}
+                confirming={confirmId === s.id}
+                deleting={deletingId === s.id}
+                onAskDelete={(e) => {
+                  e.preventDefault();
+                  setConfirmId(s.id);
+                }}
+                onCancelDelete={() => setConfirmId(null)}
+                onConfirmDelete={() => deleteThread(s)}
+              />
             ))}
           </div>
         )}

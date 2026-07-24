@@ -1,0 +1,39 @@
+{
+  "name": "SupportTicket",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Sender's name"
+    },
+    "email": {
+      "type": "string",
+      "description": "Sender's email, for replying"
+    },
+    "subject": {
+      "type": "string",
+      "description": "Short subject line"
+    },
+    "message": {
+      "type": "string",
+      "description": "The support message body"
+    },
+    "owner_email": {
+      "type": "string",
+      "description": "Logged-in sender's account email, if any (may differ from the reply-to email field above)"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["open", "resolved"],
+      "default": "open",
+      "description": "Triage status, set by admins"
+    }
+  },
+  "required": ["email", "subject", "message"],
+  "rls": {
+    "create": true,
+    "read": { "user_condition": { "role": "admin" } },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
-import { Settings } from "lucide-react";
+import { OnboardingModal } from "@/components/OnboardingModal";
+import { Eye, Settings } from "lucide-react";
 
 const AppConfig = base44.entities.AppConfig;
 
@@ -8,6 +9,7 @@ export default function ConfigPage() {
   const [config, setConfig] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +79,32 @@ export default function ConfigPage() {
           </button>
         </div>
       </div>
+
+      <div className="mt-4 rounded-2xl border border-line bg-paper-raised p-5 shadow-note">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-bold text-ink">Onboarding preview</p>
+            <p className="mt-1 text-sm text-ink-soft">
+              See exactly what new accounts see, including the waitlist step if it's on.
+            </p>
+          </div>
+          <button
+            onClick={() => setPreviewOpen(true)}
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border-2 border-ink bg-paper-raised px-3 text-sm font-semibold text-ink shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+          >
+            <Eye className="h-4 w-4" />
+            Preview
+          </button>
+        </div>
+      </div>
+
+      {previewOpen && (
+        <OnboardingModal
+          waitlistMode={!!config?.waitlist_mode}
+          onDone={() => setPreviewOpen(false)}
+          previewMode
+        />
+      )}
     </div>
   );
 }

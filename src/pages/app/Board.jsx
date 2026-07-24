@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { Logo } from "@/components/Logo";
 import { NodeCard } from "@/components/NodeCard";
+import { GhostNodeCard } from "@/components/GhostNodeCard";
 import { EdgeLayer } from "@/components/EdgeLayer";
 import { NodeDetailPanel } from "@/components/NodeDetailPanel";
 import { MicBar, BotBar, LiveUtteranceFeed } from "@/components/LiveBars";
@@ -79,6 +80,17 @@ export default function Board() {
       dragPos ? { ...layoutPositions, [dragPos.id]: { x: dragPos.x, y: dragPos.y } } : layoutPositions,
     [layoutPositions, dragPos]
   );
+
+  // Guessed spot for the "Tackling…" ghost card while a node is being
+  // classified — just off to the side of whichever node arrived last. Purely
+  // decorative; the real node's op replaces it and the layout settles itself.
+  const ghostPos = useMemo(() => {
+    const last = nodes[nodes.length - 1];
+    if (!last) return { x: 80, y: 80 };
+    const p = positions[last.id] || { x: 80, y: 80 };
+    const size = sizes[last.id] || { w: 224, h: 120 };
+    return { x: p.x + size.w + 28, y: p.y };
+  }, [nodes, positions, sizes]);
 
   // Tree edges (a node -> its parent) render solid; everything else (Tier-2
   // cross-links) renders faint + dashed so the primary flow isn't a tangle.
@@ -987,6 +999,11 @@ export default function Board() {
                 </div>
               );
             })}
+            {phase === "mapping" && (
+              <div className="absolute" style={{ left: ghostPos.x, top: ghostPos.y }}>
+                <GhostNodeCard />
+              </div>
+            )}
           </div>
 
           {nodes.length === 0 && !phase && session?.status === "complete" && (

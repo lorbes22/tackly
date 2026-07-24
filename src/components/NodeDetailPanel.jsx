@@ -4,9 +4,14 @@ import { NODE_TYPE_STYLES } from "@/components/NodeCard";
 import { ArrowRight, Check, Plus, RotateCcw, Trash2, X } from "lucide-react";
 
 const RELATION_LABELS = {
+  leads_to: "led to",
   expands: "expands",
   answers: "answers",
+  supports: "supports",
+  contradicts: "contradicts",
+  causes: "causes",
   blocks: "blocks",
+  addresses: "addresses",
   relates_to: "related to",
 };
 

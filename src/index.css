@@ -55,6 +55,46 @@
     stroke-dashoffset: 1;
     animation: edge-draw 700ms ease-out 120ms forwards;
   }
+  .legal-copy h2 {
+    @apply mt-8 font-display text-xl font-bold text-ink;
+  }
+  .legal-copy h2:first-child {
+    @apply mt-0;
+  }
+  .legal-copy ul {
+    @apply list-disc space-y-1.5 pl-5;
+  }
+  .legal-copy a {
+    @apply text-periwinkle-deep underline underline-offset-2;
+  }
+  .legal-copy strong {
+    @apply text-ink;
+  }
+  /* Hero node marquee: a slow dome-shaped loop behind the headline — cards
+     nearly disappear crossing the text in the middle, brighten again once
+     clear of it on either side. Position + opacity + scale/rotate all live
+     in one animation, so a plain hover rule can't win against it (CSS
+     animations beat normal author rules) — the hover override below uses
+     !important specifically to reclaim it for that one interaction. */
+  @keyframes hero-arc {
+    0% { left: -8%; top: 68%; opacity: 0.55; transform: translate(-50%, -50%) scale(0.55) rotate(-10deg); }
+    15% { left: 14%; top: 40%; opacity: 0.8; transform: translate(-50%, -50%) scale(0.6) rotate(-5deg); }
+    30% { left: 32%; top: 16%; opacity: 0.3; transform: translate(-50%, -50%) scale(0.62) rotate(2deg); }
+    50% { left: 50%; top: 5%; opacity: 0.1; transform: translate(-50%, -50%) scale(0.6) rotate(0deg); }
+    70% { left: 68%; top: 16%; opacity: 0.3; transform: translate(-50%, -50%) scale(0.62) rotate(-2deg); }
+    85% { left: 86%; top: 40%; opacity: 0.8; transform: translate(-50%, -50%) scale(0.6) rotate(5deg); }
+    100% { left: 108%; top: 68%; opacity: 0.55; transform: translate(-50%, -50%) scale(0.55) rotate(10deg); }
+  }
+  .hero-arc-node {
+    position: absolute;
+    animation: hero-arc 24s linear infinite;
+  }
+  .hero-arc-node:hover {
+    animation-play-state: paused;
+    opacity: 1 !important;
+    transform: translate(-50%, -50%) scale(0.85) rotate(0deg) !important;
+    z-index: 30;
+  }
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

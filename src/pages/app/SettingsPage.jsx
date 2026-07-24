@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
+import { UsageBadge } from "@/components/UsageBadge";
 
 export default function SettingsPage() {
   const { user, refresh, logout } = useAuth();
@@ -60,11 +61,10 @@ export default function SettingsPage() {
       </section>
 
       <section className="mt-6 rounded-2xl border border-line bg-paper-raised p-6 shadow-note">
-        <h2 className="font-display text-lg font-bold text-ink">Plan</h2>
-        <p className="mt-2 text-sm text-ink-soft">
-          You're on the free plan while we build. Billing arrives with plans and
-          pricing.
-        </p>
+        <h2 className="font-display text-lg font-bold text-ink">Plan &amp; usage</h2>
+        <div className="mt-4">
+          <UsageBadge variant="detailed" />
+        </div>
       </section>
 
       <section className="mt-6 rounded-2xl border border-line bg-paper-raised p-6 shadow-note">

@@ -35,7 +35,7 @@ const OPEN_STATUS_TYPES = new Set(["question", "risk", "action"]);
 // default connective tissue of a thinking session. supports/contradicts/causes
 // are the "smart connect" relations for richer structural links; rendered as
 // small labels on the connector (smaller/lighter than a full node).
-const RELATIONS = ["leads_to", "expands", "answers", "supports", "contradicts", "causes", "blocks", "relates_to"];
+const RELATIONS = ["leads_to", "expands", "answers", "supports", "contradicts", "causes", "blocks", "addresses", "relates_to"];
 
 // Connected-flow layout: the board is a top-down tree. The first node sits near
 // top-center (the root); every other node hangs BELOW its parent. Siblings
@@ -145,6 +145,7 @@ CONNECTING NODES — this is the heart of the board. Every "new" decision needs 
   - "contradicts": conflicts with, casts doubt on, or argues against the parent
   - "causes": the parent is a direct effect/consequence of this node (stronger and more specific than leads_to)
   - "blocks": a risk that threatens a parent decision/action/idea
+  - "addresses": evidence/decision/action that resolves or mitigates a parent risk — the risk-equivalent of "answers" for a question. Use this instead of "contradicts" when something is clearing/fixing a risk rather than disputing a claim.
   - "relates_to": a strong thematic link that isn't one of the above
 
 WORKED EXAMPLE (the pattern to follow for enumerated items):
@@ -177,6 +178,11 @@ Example: "blocks" — a risk threatening a decision/action, not just related to 
 Existing nodes: id=d1 decision "Ship the UGC platform beta by Friday"
 Utterance: "We can't actually ship Friday, legal still hasn't signed off on the content moderation policy."
 Correct: new, type=risk, title="Legal sign-off missing for moderation policy", parent=d1, relation="blocks" (this risk directly threatens d1's Friday commitment — stronger than "relates_to").
+
+Example: "addresses" clearing an open risk — do NOT use "contradicts" here.
+Existing nodes: id=r1 risk "Legal sign-off missing for moderation policy"
+Utterance: "Good news, legal signed off on the moderation policy this morning, so that risk's cleared."
+Correct: new, type=evidence, title="Legal sign-off received", parent=r1, relation="addresses". This is the risk-equivalent of "answers" closing out a question — the risk isn't being disputed, it's being resolved. "contradicts" is reserved for disputing a claim/opinion, not for a risk getting mitigated or cleared.
 
 Example: independent branch vs. same-subject alternative (the distinction the rules above call out).
 Existing nodes: id=t1 topic "Onboarding redesign"

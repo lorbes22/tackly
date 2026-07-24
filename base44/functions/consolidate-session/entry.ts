@@ -8,7 +8,7 @@ import { makeAnthropic, reasonForJson } from "../../shared/claude.ts";
 // between nodes that Tier-1's narrow per-utterance context can't see.
 
 const TIER2_MODEL = "claude-sonnet-5";
-const RELATIONS = ["expands", "answers", "blocks", "relates_to"];
+const RELATIONS = ["expands", "answers", "blocks", "addresses", "relates_to"];
 
 const TIER2_SYSTEM = `You are the consolidation engine for Tackly, a tool that maps spoken thought into nodes. You are given the full node map for one session. Your job:
 
@@ -18,6 +18,7 @@ const TIER2_SYSTEM = `You are the consolidation engine for Tackly, a tool that m
 - "expands": A adds detail or builds on B
 - "answers": A (evidence/decision/idea/opinion) answers question B
 - "blocks": A (usually a risk) blocks or threatens B
+- "addresses": A (evidence/decision/action) resolves or mitigates risk B — the risk-equivalent of "answers" for a question. Use this, not "blocks" or a generic link, when a risk has clearly been cleared elsewhere in the map.
 - "relates_to": strong thematic link (use sparingly)
 
 Rules:
@@ -26,7 +27,7 @@ Rules:
 - Never propose an edge for a pair you are merging, an edge already listed as existing, or a self-edge.
 
 Return ONLY a JSON object (no prose, no markdown fences) of exactly this shape:
-{"merges":[{"keep_id":"<id>","remove_id":"<id>","merged_summary":"<text>"}],"edges":[{"from_id":"<id>","to_id":"<id>","relation":"expands|answers|blocks|relates_to"}]}
+{"merges":[{"keep_id":"<id>","remove_id":"<id>","merged_summary":"<text>"}],"edges":[{"from_id":"<id>","to_id":"<id>","relation":"expands|answers|blocks|addresses|relates_to"}]}
 merged_summary is optional. Both arrays may be empty.`;
 
 function buildUserPrompt(

@@ -1,59 +1,48 @@
 import { Link } from "react-router-dom";
 import { Logo } from "@/components/Logo";
 import { useAuth } from "@/lib/AuthContext";
-import { ArrowRight } from "lucide-react";
+import { useDocumentMeta } from "@/lib/useDocumentMeta";
+import { HeroNodePopups } from "@/components/landing/HeroNodePopups";
+import { ScrollRevealText } from "@/components/landing/ScrollRevealText";
+import { Faq } from "@/components/landing/Faq";
+import { SiteFooter } from "@/components/landing/SiteFooter";
+import { ArrowRight, FileUp, Mic, Users } from "lucide-react";
 
-// Static hero cluster — a taste of the board, styled like the real node cards
-const heroNotes = [
+const HOW_IT_WORKS = [
   {
-    type: "Idea",
-    text: "What if onboarding was one question?",
-    color: "bg-note-lavender",
-    rotation: "-rotate-3",
-    pos: "left-0 top-4",
+    icon: Mic,
+    title: "Talk solo",
+    body: "Hold to talk whenever an idea shows up. Tackly turns the ramble into a structured map as you go.",
   },
   {
-    type: "Decision",
-    text: "Ship the beta to 20 users Friday",
-    color: "bg-note-sky",
-    rotation: "rotate-2",
-    pos: "left-40 top-0",
+    icon: Users,
+    title: "Join a meeting",
+    body: "Tackly's bot joins your call, listens in real time, and builds the board while everyone's still talking.",
   },
   {
-    type: "Question",
-    text: "Who owns the pricing page?",
-    color: "bg-note-amber",
-    rotation: "rotate-6",
-    pos: "left-16 top-36",
-    dashed: true,
-  },
-  {
-    type: "Action",
-    text: "Maya → draft the launch email",
-    color: "bg-note-gold",
-    rotation: "-rotate-2",
-    pos: "left-64 top-44",
+    icon: FileUp,
+    title: "Upload a transcript",
+    body: "Already have one? Paste or upload it and get the same living map, no meeting required.",
   },
 ];
 
-function HeroNote({ note, index }) {
-  return (
-    <div
-      className={`absolute w-44 rounded-note border-2 border-ink p-3.5 shadow-brutal ${note.color} ${note.rotation} ${note.pos} ${
-        note.dashed ? "border-dashed" : ""
-      } animate-pop-in`}
-      style={{ animationDelay: `${300 + index * 180}ms` }}
-    >
-      <span className="text-[10px] font-bold uppercase tracking-widest text-ink/60">
-        {note.type}
-      </span>
-      <p className="mt-1 text-sm font-medium leading-snug text-ink">{note.text}</p>
-    </div>
-  );
-}
+const ABOUT_TEXT =
+  "Every call 📞. Every rambling idea 💡. Every meeting 🗣️. All turned into a living map 🧠 — automatically.";
+
+const NAV_CTA_CLASS =
+  "flex h-10 items-center gap-1.5 rounded-xl border-2 border-ink bg-periwinkle px-4 font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5 hover:bg-periwinkle-deep";
+
+const PRIMARY_CTA_CLASS =
+  "flex h-12 items-center gap-2 rounded-xl border-2 border-ink bg-periwinkle px-7 font-display text-base font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5 hover:bg-periwinkle-deep";
 
 export default function Landing() {
   const { user } = useAuth();
+
+  useDocumentMeta({
+    title: "Tackly — listens while you speak, builds your thinking in real time",
+    description:
+      "Talk solo, join a meeting, or upload a transcript — Tackly turns it into a living map of ideas, decisions, and questions in real time.",
+  });
 
   return (
     <div className="min-h-screen bg-paper">
@@ -61,10 +50,7 @@ export default function Landing() {
         <Logo />
         <nav className="flex items-center gap-2">
           {user ? (
-            <Link
-              to="/app"
-              className="flex h-10 items-center gap-1.5 rounded-xl bg-periwinkle px-4 text-sm font-semibold text-white transition-colors hover:bg-periwinkle-deep"
-            >
+            <Link to="/app" className={NAV_CTA_CLASS}>
               Open your threads
               <ArrowRight className="h-4 w-4" />
             </Link>
@@ -76,10 +62,7 @@ export default function Landing() {
               >
                 Log in
               </Link>
-              <Link
-                to="/signup"
-                className="flex h-10 items-center rounded-xl bg-periwinkle px-4 text-sm font-semibold text-white transition-colors hover:bg-periwinkle-deep"
-              >
+              <Link to="/signup" className={NAV_CTA_CLASS}>
                 Get started
               </Link>
             </>
@@ -87,47 +70,89 @@ export default function Landing() {
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl px-4">
-        <section className="grid items-center gap-12 py-16 lg:grid-cols-2 lg:py-24">
-          <div className="animate-fade-up">
-            <h1 className="font-display text-5xl font-bold leading-[1.05] tracking-tight text-ink sm:text-6xl">
-              Talk it out.
-              <br />
-              <span className="text-periwinkle">See what you think.</span>
-            </h1>
-            <p className="mt-6 max-w-md text-lg leading-relaxed text-ink-soft">
-              Tackly turns meetings and rambling voice notes into a living map of
-              ideas, decisions, and questions — one that remembers what you said
-              last week.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link
-                to="/signup"
-                className="flex h-12 items-center gap-2 rounded-xl bg-periwinkle px-6 text-base font-semibold text-white shadow-note transition-all hover:-translate-y-0.5 hover:bg-periwinkle-deep hover:shadow-note-lg"
+      <main>
+        <section className="relative mx-auto w-full max-w-5xl overflow-hidden px-4 py-16 sm:py-24">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-1/2 top-0 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-periwinkle-tint opacity-70 blur-3xl"
+          />
+          <HeroNodePopups />
+          <div className="relative z-10 mx-auto flex max-w-2xl flex-col items-center text-center">
+            <span
+              className="animate-fade-up rounded-full border-2 border-ink bg-paper-raised px-3.5 py-1 text-xs font-bold uppercase tracking-widest text-ink-soft shadow-brutal-sm"
+            >
+              Now mapping thought in real time
+            </span>
+            <h1 className="mt-5 flex flex-wrap justify-center gap-x-3 gap-y-1 font-display text-5xl font-bold leading-[1.1] tracking-tight text-ink sm:text-7xl">
+              {["Turn", "speech", "into", "a"].map((word, i) => (
+                <span
+                  key={word}
+                  className="inline-block animate-fade-up"
+                  style={{ animationDelay: `${60 + i * 90}ms` }}
+                >
+                  {word}
+                </span>
+              ))}
+              <span
+                className="inline-block animate-fade-up text-periwinkle"
+                style={{ animationDelay: "420ms" }}
               >
-                Start mapping — free
+                thinking map.
+              </span>
+            </h1>
+            <p
+              className="mt-6 max-w-lg animate-fade-up text-lg leading-relaxed text-ink-soft"
+              style={{ animationDelay: "580ms" }}
+            >
+              Tackly listens whilst you speak — and builds your thinking in real time.
+            </p>
+            <div className="mt-8 animate-fade-up" style={{ animationDelay: "700ms" }}>
+              <Link to={user ? "/app" : "/signup"} className={PRIMARY_CTA_CLASS}>
+                Try it for free
                 <ArrowRight className="h-4 w-4" />
               </Link>
-              <span className="text-sm text-ink-faint">
-                No card. No setup. Just talk.
-              </span>
             </div>
           </div>
+        </section>
 
-          <div className="relative mx-auto hidden h-80 w-[28rem] lg:block" aria-hidden="true">
-            {heroNotes.map((note, i) => (
-              <HeroNote key={note.type} note={note} index={i} />
+        <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:pb-24">
+          <div className="grid gap-5 sm:grid-cols-3">
+            {HOW_IT_WORKS.map(({ icon: Icon, title, body }) => (
+              <div
+                key={title}
+                className="rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm transition-transform hover:-translate-y-1"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-periwinkle-tint">
+                  <Icon className="h-5 w-5 text-periwinkle-deep" />
+                </div>
+                <p className="mt-4 font-display text-lg font-bold text-ink">{title}</p>
+                <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">{body}</p>
+              </div>
             ))}
+          </div>
+        </section>
+
+        <ScrollRevealText text={ABOUT_TEXT} />
+
+        <Faq />
+
+        <section className="border-y border-line bg-periwinkle-tint">
+          <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-4 py-16 text-center sm:py-20">
+            <h2 className="font-display text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+              Ready to see what you actually think?
+            </h2>
+            <p className="mt-3 max-w-md text-ink-soft">
+              No card. No setup. Just talk.
+            </p>
+            <Link to={user ? "/app" : "/signup"} className={`mt-7 ${PRIMARY_CTA_CLASS}`}>
+              Try it for free
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         </section>
       </main>
 
-      <footer className="border-t border-line">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-6 text-sm text-ink-faint">
-          <span>© {new Date().getFullYear()} Tackly</span>
-          <span>tackly.co</span>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

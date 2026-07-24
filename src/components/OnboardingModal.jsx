@@ -1,127 +1,82 @@
 import { useState } from "react";
-import { Mic, Users, FileText, Download } from "lucide-react";
-
-// Small decorative preview: 4 mini node cards pop in and connect, looping,
-// to give a first-glance feel for what the real board does — much smaller
-// and simpler than the real NodeCard/EdgeLayer, purely illustrative.
-function NodePreview() {
-  const cards = [
-    { key: "a", label: "Topic", type: "New feature idea", cls: "bg-note-teal border-note-teal-edge", x: 8, y: 6, delay: "0s" },
-    { key: "b", label: "Idea", type: "Ship it Friday", cls: "bg-note-lavender border-note-lavender-edge", x: 172, y: 0, delay: "0.35s" },
-    { key: "c", label: "Question", type: "Who owns this?", cls: "bg-note-amber border-note-amber-edge", x: 20, y: 96, delay: "0.7s" },
-    { key: "d", label: "Decision", type: "Launch Monday", cls: "bg-note-sky border-note-sky-edge", x: 188, y: 104, delay: "1.05s" },
-  ];
-  const lines = [
-    { x1: 78, y1: 34, x2: 172, y2: 26, delay: "0.6s" },
-    { x1: 60, y1: 46, x2: 60, y2: 96, delay: "0.95s" },
-    { x1: 232, y1: 40, x2: 228, y2: 104, delay: "1.3s" },
-  ];
-
-  return (
-    <div className="relative mx-auto h-[150px] w-[360px] max-w-full">
-      <svg className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
-        {lines.map((l, i) => (
-          <line
-            key={i}
-            x1={l.x1}
-            y1={l.y1}
-            x2={l.x2}
-            y2={l.y2}
-            stroke="#C3BFB6"
-            strokeWidth="2"
-            strokeDasharray="4 3"
-            className="animate-onboard-line"
-            style={{ animationDelay: l.delay }}
-          />
-        ))}
-      </svg>
-      {cards.map((c) => (
-        <div
-          key={c.key}
-          className={`absolute w-[150px] rounded-lg border-2 px-2.5 py-1.5 shadow-brutal-sm animate-onboard-card ${c.cls}`}
-          style={{ left: c.x, top: c.y, animationDelay: c.delay }}
-        >
-          <div className="text-[9px] font-bold uppercase tracking-wide text-ink-soft">
-            {c.label}
-          </div>
-          <div className="truncate text-xs font-semibold text-ink">{c.type}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
+import { FileText, Mic, Users, X } from "lucide-react";
 
 const FEATURES = [
   {
     icon: Mic,
-    title: "Solo",
-    body: "Hold to talk and think out loud — nodes appear as you go.",
+    title: "Talk solo",
+    body: "Hold to talk and think out loud.",
   },
   {
     icon: Users,
-    title: "Meetings",
-    body: "Invite the Tackly bot to a call. It listens and maps in real time — no setup.",
+    title: "Join a meeting",
+    body: "Our bot listens and maps live.",
   },
   {
     icon: FileText,
-    title: "Transcripts",
-    body: "Paste in any transcript to map it after the fact.",
-  },
-  {
-    icon: Download,
-    title: "Export anywhere",
-    body: "Export a board as an image, or as markdown to hand straight to Claude.",
+    title: "Upload a transcript",
+    body: "Paste one in, get a map back.",
   },
 ];
 
-export function OnboardingModal({ waitlistMode, onDone }) {
+// Two steps: "Meet Tackly" (minimal, feature containers) then, only when
+// waitlist mode is on, a dedicated step for the waitlist note. Without
+// waitlist mode there's nothing more to say, so step 0's button finishes
+// onboarding directly.
+export function OnboardingModal({ waitlistMode, onDone, previewMode = false }) {
   const [step, setStep] = useState(0);
+  const hasSecondStep = !!waitlistMode;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4">
-      <div className="w-full max-w-md rounded-2xl border-2 border-ink bg-paper-raised p-7 text-center shadow-brutal animate-fade-up">
+      <div className="relative w-full max-w-md rounded-2xl border-2 border-ink bg-paper-raised p-8 text-center shadow-brutal animate-fade-up">
+        {previewMode && (
+          <button
+            onClick={onDone}
+            title="Close preview"
+            className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-paper-sunken hover:text-ink"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+
         {step === 0 ? (
           <>
-            <p className="font-display text-2xl font-bold text-ink">Meet Tackly</p>
-            <p className="mt-2 text-sm text-ink-soft">
-              Talk it out. Watch your ideas, decisions, and questions map themselves as you go.
+            <p className="font-display text-4xl font-bold tracking-tight text-ink">Meet Tackly</p>
+            <p className="mt-3 text-sm text-ink-soft">
+              Talk it out. Watch your ideas, decisions, and questions map themselves.
             </p>
-            <div className="mt-5">
-              <NodePreview />
-            </div>
-            {waitlistMode && (
-              <p className="mt-5 rounded-lg bg-note-lavender px-3 py-2 text-xs font-medium text-ink">
-                I'm still building Tackly, so you can enjoy it for free in the meantime.
-              </p>
-            )}
-            <button
-              onClick={() => setStep(1)}
-              className="mt-6 h-11 w-full rounded-xl border-2 border-ink bg-periwinkle font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
-            >
-              Get started
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="font-display text-2xl font-bold text-ink">What you can do</p>
-            <div className="mt-5 space-y-3 text-left">
+            <div className="mt-7 grid grid-cols-3 gap-2.5 text-left">
               {FEATURES.map((f) => (
-                <div key={f.title} className="flex items-start gap-3 rounded-xl bg-paper-sunken p-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-periwinkle-tint">
-                    <f.icon className="h-4 w-4 text-periwinkle-deep" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-ink">{f.title}</p>
-                    <p className="text-xs text-ink-soft">{f.body}</p>
-                  </div>
+                <div key={f.title} className="rounded-xl border-2 border-ink bg-paper-sunken p-2.5">
+                  <f.icon className="h-4 w-4 text-periwinkle-deep" />
+                  <p className="mt-2 font-display text-xs font-bold leading-tight text-ink">
+                    {f.title}
+                  </p>
+                  <p className="mt-1 text-[10px] leading-snug text-ink-soft">{f.body}</p>
                 </div>
               ))}
             </div>
             <button
-              onClick={onDone}
-              className="mt-6 h-11 w-full rounded-xl border-2 border-ink bg-periwinkle font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+              onClick={() => (hasSecondStep ? setStep(1) : onDone())}
+              className="mt-7 h-11 w-full rounded-xl border-2 border-ink bg-periwinkle font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
             >
-              Start mapping
+              {hasSecondStep ? "Continue" : "Get started"}
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="font-display text-3xl font-bold tracking-tight text-ink">
+              Still early days 🌱
+            </p>
+            <p className="mt-4 text-[15px] leading-relaxed text-ink-soft">
+              I'm still building Tackly, so you can enjoy it for free in the meantime.
+            </p>
+            <button
+              onClick={onDone}
+              className="mt-8 h-11 w-full rounded-xl border-2 border-ink bg-periwinkle font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+            >
+              Get started
             </button>
           </>
         )}

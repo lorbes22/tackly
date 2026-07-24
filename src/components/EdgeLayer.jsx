@@ -16,6 +16,7 @@ const RELATION_LABELS = {
   contradicts: "contradicts",
   causes: "causes",
   blocks: "blocks",
+  addresses: "addresses",
 };
 
 export function EdgeLayer({
