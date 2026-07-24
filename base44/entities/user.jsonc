@@ -5,6 +5,14 @@
     "plan_id": {
       "type": "string",
       "description": "Plan this user is subscribed to (references a Plan record's id). Empty/missing means the Free plan."
+    },
+    "stripe_customer_id": {
+      "type": "string",
+      "description": "Stripe Customer id (cus_...) for this user, created on first checkout."
+    },
+    "stripe_subscription_id": {
+      "type": "string",
+      "description": "Stripe Subscription id (sub_...) currently backing this user's plan_id, kept in sync by stripe-webhook."
     }
   },
   "rls": {

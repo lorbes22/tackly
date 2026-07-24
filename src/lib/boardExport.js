@@ -31,9 +31,22 @@ const TYPE_LABEL = {
 };
 const INK = "#26241F";
 const PAPER = "#FAF8F4";
+const GOLD = "#F9EDAF";
 const PAD = 80;
 const CARD_W = 224;
 const CARD_H = 120;
+
+// Same relation vocabulary + labels as EdgeLayer, so exports show the same
+// smart-connect pills instead of going unlabeled.
+const RELATION_LABELS = {
+  expands: "expands",
+  answers: "answers",
+  supports: "supports",
+  contradicts: "contradicts",
+  causes: "causes",
+  blocks: "blocks",
+  addresses: "addresses",
+};
 
 function esc(s) {
   return String(s ?? "")
@@ -65,7 +78,7 @@ function wrap(text, maxChars, maxLines) {
   return lines;
 }
 
-export function boardToSvg(nodes, edges, sizes = {}, positions = {}) {
+export function boardToSvg(nodes, edges, sizes = {}, positions = {}, noteCounts = {}, treeEdgeIds = null) {
   if (nodes.length === 0) return null;
   const sz = (id) => sizes[id] || { w: CARD_W, h: CARD_H };
   const px = (n) => positions[n.id]?.x ?? n.position_x ?? 80;
@@ -86,30 +99,56 @@ export function boardToSvg(nodes, edges, sizes = {}, positions = {}) {
   const vbW = maxX - minX + PAD * 2;
   const vbH = maxY - minY + PAD * 2;
 
-  const centers = new Map(
+  const rects = new Map(
     nodes.map((n) => {
       const s = sz(n.id);
-      return [n.id, { x: px(n) + s.w / 2, y: py(n) + s.h / 2 }];
+      const x = px(n);
+      const y = py(n);
+      return [n.id, { x, y, w: s.w, h: s.h, cx: x + s.w / 2, cy: y + s.h / 2 }];
     })
   );
 
-  // Edges (straight ink lines with arrowheads, trimmed to card borders)
-  const edgeSvg = edges
+  // Edges: same soft arched cubic-bezier + relation-label pills as the live
+  // EdgeLayer, so an export looks identical to the board it came from —
+  // draw cross-links first so the solid tree edges sit on top.
+  const ordered = [...edges].sort((e1, e2) => {
+    const t1 = !treeEdgeIds || treeEdgeIds.has(e1.id) ? 1 : 0;
+    const t2 = !treeEdgeIds || treeEdgeIds.has(e2.id) ? 1 : 0;
+    return t1 - t2;
+  });
+  const edgeSvg = ordered
     .map((e) => {
-      const f = centers.get(e.from_node_id);
-      const t = centers.get(e.to_node_id);
-      if (!f || !t) return "";
-      const dx = t.x - f.x, dy = t.y - f.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const ux = dx / len, uy = dy / len;
-      const trim = (id, m) => {
-        const s = sz(id);
-        const hw = s.w / 2 + m, hh = s.h / 2 + m;
-        return Math.min(ux !== 0 ? hw / Math.abs(ux) : 1e9, uy !== 0 ? hh / Math.abs(uy) : 1e9);
-      };
-      const st = trim(e.from_node_id, 4), en = trim(e.to_node_id, 8);
-      if (st + en >= len) return "";
-      return `<line x1="${(f.x + ux * st).toFixed(1)}" y1="${(f.y + uy * st).toFixed(1)}" x2="${(t.x - ux * en).toFixed(1)}" y2="${(t.y - uy * en).toFixed(1)}" stroke="${INK}" stroke-width="2" opacity="0.35" marker-end="url(#arrow)" />`;
+      const a = rects.get(e.from_node_id);
+      const b = rects.get(e.to_node_id);
+      if (!a || !b) return "";
+      const isTree = !treeEdgeIds || treeEdgeIds.has(e.id);
+
+      const rightward = b.cx >= a.cx;
+      const x1 = rightward ? a.x + a.w : a.x;
+      const y1 = a.cy;
+      const x2 = rightward ? b.x : b.x + b.w;
+      const y2 = b.cy;
+
+      const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
+      const c1x = rightward ? x1 + dx : x1 - dx;
+      const c2x = rightward ? x2 - dx : x2 + dx;
+      const d = `M ${x1.toFixed(1)} ${y1.toFixed(1)} C ${c1x.toFixed(1)} ${y1.toFixed(1)}, ${c2x.toFixed(1)} ${y2.toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+
+      const label = RELATION_LABELS[e.relation];
+      const mx = 0.125 * x1 + 0.375 * c1x + 0.375 * c2x + 0.125 * x2;
+      const my = 0.5 * y1 + 0.5 * y2;
+      const labelW = label ? label.length * 5.2 + 12 : 0;
+
+      const pathSvg = `<path d="${d}" fill="none" stroke="${INK}" stroke-width="${isTree ? 2 : 1.5}" stroke-linecap="round"${
+        isTree ? "" : ' stroke-dasharray="2 7"'
+      } opacity="${isTree ? 0.32 : 0.16}" />`;
+      const labelSvg = label
+        ? `<g opacity="${isTree ? 0.85 : 0.55}">
+  <rect x="${(mx - labelW / 2).toFixed(1)}" y="${(my - 8).toFixed(1)}" width="${labelW.toFixed(1)}" height="16" rx="8" fill="${PAPER}" stroke="${INK}" stroke-width="1" />
+  <text x="${mx.toFixed(1)}" y="${(my + 3).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="700" fill="${INK}" font-family="Inter, sans-serif" letter-spacing="0.02em">${esc(label)}</text>
+</g>`
+        : "";
+      return pathSvg + labelSvg;
     })
     .join("");
 
@@ -141,21 +180,29 @@ export function boardToSvg(nodes, edges, sizes = {}, positions = {}) {
           return line;
         })
         .join("");
+      // Matches NodeCard's top-right "-right-2 -top-2" gold pill: a little
+      // page icon + bare count, overlapping the card's top-right corner.
+      const noteCount = noteCounts[n.id] || 0;
+      const noteW = 22 + String(noteCount).length * 7;
+      const noteSvg =
+        noteCount > 0
+          ? `<g transform="translate(${s.w - noteW / 2} 0)">
+  <rect x="${-noteW / 2}" y="-12" width="${noteW}" height="24" rx="12" fill="${GOLD}" stroke="${INK}" stroke-width="2" />
+  <rect x="${-noteW / 2 + 8}" y="-5" width="9" height="10" rx="1.5" fill="none" stroke="${INK}" stroke-width="1.3" />
+  <text x="${noteW / 2 - 6}" y="4" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="${INK}">${esc(String(noteCount))}</text>
+</g>`
+          : "";
       return `<g transform="translate(${x} ${y}) rotate(${rot} ${s.w / 2} ${s.h / 2})">
   <rect x="4" y="4" width="${s.w}" height="${s.h}" rx="10" fill="${INK}" />
   <rect x="0" y="0" width="${s.w}" height="${s.h}" rx="10" fill="${fill}" stroke="${INK}" stroke-width="2"${dashed ? ' stroke-dasharray="6 4"' : ""} />
   <text x="14" y="22" font-family="Inter, sans-serif" font-size="9" font-weight="700" letter-spacing="1.5" fill="${INK}" opacity="0.6">${TYPE_LABEL[n.type] || "NODE"}</text>
   ${titleSvg}${summarySvg}
+  ${noteSvg}
 </g>`;
     })
     .join("\n");
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vbX} ${vbY} ${vbW} ${vbH}" width="${vbW}" height="${vbH}">
-  <defs>
-    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0.5 L7,4 L0,7.5" fill="none" stroke="${INK}" stroke-width="1.4" opacity="0.45" />
-    </marker>
-  </defs>
   <rect x="${vbX}" y="${vbY}" width="${vbW}" height="${vbH}" fill="${PAPER}" />
   <g>${edgeSvg}</g>
   <g>${nodeSvg}</g>

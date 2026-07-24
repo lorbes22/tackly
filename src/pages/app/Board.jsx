@@ -810,12 +810,12 @@ export default function Board() {
         exportMarkdown(boardToMarkdown(session?.title, nodes, edges), `${base}.md`);
         return;
       }
-      const svg = boardToSvg(nodes, edges, sizes, positions);
+      const svg = boardToSvg(nodes, edges, sizes, positions, noteCounts, treeEdgeIds);
       if (!svg) return;
       if (format === "svg") exportSvg(svg, `${base}.svg`);
       else await exportPng(svg, `${base}.png`);
     },
-    [nodes, edges, sizes, positions, session]
+    [nodes, edges, sizes, positions, session, noteCounts, treeEdgeIds]
   );
 
   if (notFound) {

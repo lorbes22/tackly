@@ -2,6 +2,7 @@
 // flat pastel fill, hard ink border, offset shadow, slight random rotation.
 // Question and Risk nodes keep a dashed border while open.
 import { forwardRef } from "react";
+import { StickyNote } from "lucide-react";
 
 export const NODE_TYPE_STYLES = {
   topic: { fill: "bg-note-teal", label: "Topic" },
@@ -41,15 +42,37 @@ export const NodeCard = forwardRef(function NodeCard(
   const dashed = forming || isOpen;
 
   return (
-    <button
+    <div
       ref={ref}
-      type="button"
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.(e);
+        }
+      }}
       style={{ "--note-rotation": `${node.rotation_deg || 0}deg` }}
-      className={`group/node relative w-56 rounded-note border-2 border-ink p-3.5 text-left shadow-brutal transition-all [transform:rotate(var(--note-rotation))] hover:shadow-brutal-lg hover:!opacity-100 focus-visible:shadow-brutal-lg ${
+      className={`group/node relative w-56 cursor-pointer rounded-note border-2 border-ink p-3.5 text-left shadow-brutal outline-none transition-all [transform:rotate(var(--note-rotation))] hover:shadow-brutal-lg hover:!opacity-100 focus-visible:shadow-brutal-lg ${
         dashed ? "border-dashed" : ""
       } ${forming ? "animate-forming" : ""} ${style.muted ? "opacity-70" : ""} ${style.fill} ${animate ? "animate-pop-in" : ""} ${className}`}
     >
+      {noteCount > 0 && (
+        <button
+          type="button"
+          title={`${noteCount} ${noteCount === 1 ? "note" : "notes"}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onNotesClick?.(node.id);
+          }}
+          className="absolute -right-2 -top-2 z-10 flex h-6 cursor-pointer items-center gap-1 rounded-full border-2 border-ink bg-note-gold px-1.5 text-[10px] font-bold text-ink shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+        >
+          <StickyNote className="h-3 w-3" />
+          {noteCount}
+        </button>
+      )}
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-bold uppercase tracking-widest text-ink/60">
           {style.label}
@@ -72,35 +95,20 @@ export const NodeCard = forwardRef(function NodeCard(
           {node.summary}
         </p>
       )}
-      {/* Notes row: "X notes" stays visible whenever any exist; "Add note"
-          only reveals on hover — both jump to the same focused notes panel. */}
-      <div
-        className={`flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-ink/45 transition-all ${
-          noteCount > 0
-            ? "mt-2 max-h-5 border-t border-ink/10 pt-1.5 opacity-100"
-            : "mt-0 max-h-0 overflow-hidden border-t-0 pt-0 opacity-0 group-hover/node:mt-2 group-hover/node:max-h-5 group-hover/node:border-t group-hover/node:border-ink/10 group-hover/node:pt-1.5 group-hover/node:opacity-100"
-        }`}
-      >
-        {noteCount > 0 && (
-          <span>
-            {noteCount} {noteCount === 1 ? "note" : "notes"}
-          </span>
-        )}
-        <span
-          role="button"
-          tabIndex={0}
+      {/* "+ Add note" reveals on hover for any card, note count or not. */}
+      <div className="mt-0 max-h-0 overflow-hidden pt-0 opacity-0 transition-all group-hover/node:mt-2 group-hover/node:max-h-5 group-hover/node:border-t group-hover/node:border-ink/10 group-hover/node:pt-1.5 group-hover/node:opacity-100">
+        <button
+          type="button"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onNotesClick?.(node.id);
           }}
-          className={`opacity-0 transition-opacity hover:text-ink hover:underline group-hover/node:opacity-100 ${
-            noteCount > 0 ? "ml-auto" : ""
-          }`}
+          className="text-[10px] font-bold uppercase tracking-wide text-ink/45 hover:text-ink hover:underline"
         >
           + Add note
-        </span>
+        </button>
       </div>
-    </button>
+    </div>
   );
 });

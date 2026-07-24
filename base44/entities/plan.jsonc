@@ -27,6 +27,10 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Feature flags / marketing bullets for this plan"
+    },
+    "stripe_price_id": {
+      "type": "string",
+      "description": "Stripe recurring Price id (price_...) this plan checks out against. Empty means this plan can't be purchased via Checkout yet."
     }
   },
   "required": ["name"],
