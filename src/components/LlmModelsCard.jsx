@@ -10,6 +10,7 @@ const LlmConfig = base44.entities.LlmConfig;
 const TIER_DEFAULTS = {
   t1: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
   t2: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+  chat: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
 };
 
 const TIER_LABELS = {
@@ -18,6 +19,7 @@ const TIER_LABELS = {
     hint: "process-session + classify-partial's rough-guess pass — every utterance, live.",
   },
   t2: { name: "T2 — Consolidation", hint: "consolidate-session — end-of-session merge & cross-link pass." },
+  chat: { name: "TacklyAI chat", hint: "ask-tackly-ai — per-board Q&A, on demand." },
 };
 
 const EMPTY_DRAFT = { provider: "anthropic", model: "", secret_env_var: "" };
@@ -250,6 +252,7 @@ export function LlmModelsCard() {
         <div className="mt-3 space-y-3">
           <TierRow tier="t1" active={byTier("t1")} onSaved={load} />
           <TierRow tier="t2" active={byTier("t2")} onSaved={load} />
+          <TierRow tier="chat" active={byTier("chat")} onSaved={load} />
         </div>
       )}
     </div>

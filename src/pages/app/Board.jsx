@@ -10,6 +10,7 @@ import { EdgeLayer } from "@/components/EdgeLayer";
 import { NodeDetailPanel } from "@/components/NodeDetailPanel";
 import { AddNoteModal } from "@/components/AddNoteModal";
 import { MicBar, BotBar, LiveUtteranceFeed } from "@/components/LiveBars";
+import { TacklyAIPanel } from "@/components/TacklyAIPanel";
 import { RatingModal } from "@/components/RatingModal";
 import { usePanZoom } from "@/lib/usePanZoom";
 import { computeLayout } from "@/lib/treeLayout";
@@ -995,6 +996,8 @@ export default function Board() {
             )}
             <span className="hidden md:inline">Transcript</span>
           </button>
+
+          <TacklyAIPanel sessionId={sessionId} />
 
           <div className="relative">
             <button

@@ -4,8 +4,8 @@
   "properties": {
     "tier": {
       "type": "string",
-      "enum": ["t1", "t2"],
-      "description": "Which classification tier this row controls — t1 = process-session (live, per-utterance), t2 = consolidate-session (end-of-session merge/edge pass). At most one row per tier is meaningful; the newest is used."
+      "enum": ["t1", "t2", "chat"],
+      "description": "Which classification tier this row controls — t1 = process-session (live, per-utterance), t2 = consolidate-session (end-of-session merge/edge pass), chat = ask-tackly-ai (per-board Q&A). At most one row per tier is meaningful; the newest is used."
     },
     "provider": {
       "type": "string",

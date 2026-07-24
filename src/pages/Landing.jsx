@@ -8,7 +8,7 @@ import { Faq } from "@/components/landing/Faq";
 import { SiteFooter } from "@/components/landing/SiteFooter";
 import { PlatformIconRow } from "@/components/PlatformIcons";
 import { PlanCards } from "@/components/PlanCards";
-import { ArrowRight, FileUp, Mic, Users } from "lucide-react";
+import { ArrowRight, FileUp, Mic, Sparkles, Users } from "lucide-react";
 
 const HOW_IT_WORKS = [
   {
@@ -135,6 +135,27 @@ export default function Landing() {
                 <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">{body}</p>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:pb-24">
+          <div className="flex flex-col items-start gap-6 rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm sm:flex-row sm:items-center sm:p-8">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-periwinkle-tint">
+              <Sparkles className="h-6 w-6 text-periwinkle-deep" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-display text-xl font-bold text-ink">TacklyAI</p>
+                <span className="rounded-full border-2 border-ink bg-note-mint px-2.5 py-0.5 text-xs font-bold text-ink">
+                  On every plan
+                </span>
+              </div>
+              <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-soft">
+                Ask questions right on the board — "what was the main action?", "what risks came up?" — and get
+                answers grounded only in that thread's own nodes and transcript. No digging back through the map
+                yourself.
+              </p>
+            </div>
           </div>
         </section>
 

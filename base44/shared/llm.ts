@@ -27,7 +27,7 @@ export type ClassifyOutcome = {
 export async function classifyForTier(opts: {
   // deno-lint-ignore no-explicit-any
   base44: any; // needs .asServiceRole.entities.LlmConfig
-  tier: "t1" | "t2";
+  tier: "t1" | "t2" | "chat";
   defaultModel: string; // today's hardcoded Anthropic model for this tier
   system: string;
   user: string;

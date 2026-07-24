@@ -143,7 +143,7 @@ const TIER1_SYSTEM = `You are the classification engine for Tackly, a tool that 
 
 Analytical node types (real substance worth mapping):
 - topic: introduces, names, or frames a subject/section of the discussion — especially useful when the speaker announces something like "we have two ideas" or "let's talk about X" before getting into specifics. A topic is a natural PARENT for the ideas/questions/risks that follow under it.
-- idea: a proposal, suggestion, or possibility raised
+- idea: a proposal, suggestion, or possibility raised — a SINGLE conceptual suggestion. If the speaker lays out multiple steps or a concrete forward path toward a goal ("we should do X, then Y, to get to Z"), that's plan, not idea — see plan below and its worked example. When in doubt: one proposed thing = idea, a direction with steps/a target = plan.
 - question: something raised but not yet answered
 - decision: a commitment being MADE right now — a choice the group or person is settling on going forward ("let's ship Friday", "we'll use Postgres"). If it's reporting that something already happened or already got fixed, it's evidence, not a decision — see the worked example below.
 - risk: a concern, blocker, or potential problem
@@ -271,6 +271,10 @@ Correct: SKIP all three fragments. None of them carries content beyond what the 
 Example: plan vs. topic vs. action.
 Utterance: "I need to figure out how to make this as cheap as possible — get token cost down to 10 cents per 6 minutes through batching and deduping restated facts."
 Correct: new, type=plan, title="Cut token cost to 10¢/6min via batching + dedup", parent=whatever cost topic/risk prompted it. NOT type=topic (this isn't just framing a subject, it's a concrete forward-looking goal with named steps) and NOT type=action (it's bigger than one task — batching and dedup are two separate actions that could each attach under this plan node later).
+
+Example: plan vs. idea — the other boundary plan gets confused with (a real miscall seen in production: a plan-shaped utterance got filed as idea).
+Utterance: "What I want to do is set up the database first, then wire up auth, and once that's solid, start on the actual board UI."
+Correct: new, type=plan, title="Sequence: database, then auth, then board UI", parent=whatever topic prompted it. NOT type=idea — this isn't a single proposal, it's a multi-step direction toward a goal (three named steps in sequence). A same-subject utterance like "maybe we set up the database first" with no further steps/target IS just an idea — the test is whether there's a sequence/target, not just a proposal being made.
 
 Example: decision vs. evidence — a status report is NOT a decision.
 Utterance: "So we've fixed two issues from before — the meeting bot wasn't joining, that's fixed now, and we've also changed the avatar so it shows when it's listening."

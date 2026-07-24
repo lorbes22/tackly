@@ -59,8 +59,8 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const { tier, revert, provider, model, secret_env_var } = body;
-    if (tier !== "t1" && tier !== "t2") {
-      return Response.json({ error: "tier must be 't1' or 't2'" }, { status: 400 });
+    if (tier !== "t1" && tier !== "t2" && tier !== "chat") {
+      return Response.json({ error: "tier must be 't1', 't2', or 'chat'" }, { status: 400 });
     }
 
     const existing = await base44.asServiceRole.entities.LlmConfig.filter({ tier }, "-created_date", 1);
