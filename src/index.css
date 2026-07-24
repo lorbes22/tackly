@@ -104,4 +104,16 @@
       transition-duration: 0.01ms !important;
     }
   }
+  /* iOS Safari auto-zooms the page on focusing any text input whose computed
+     font-size is under 16px — most of this app's inputs use text-sm (14px).
+     Forcing 16px specifically on mobile viewports (not overriding desktop
+     sizing) is the standard fix, rather than hunting down every text-sm
+     input/textarea across the app individually. */
+  @media (max-width: 640px) {
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
 }

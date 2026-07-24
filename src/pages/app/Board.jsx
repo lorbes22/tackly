@@ -1046,7 +1046,7 @@ export default function Board() {
           onPointerMove={panHandlers.onPointerMove}
           onPointerUp={panHandlers.onPointerUp}
           onPointerLeave={panHandlers.onPointerLeave}
-          className="h-full cursor-grab overflow-hidden active:cursor-grabbing"
+          className="h-full touch-none cursor-grab overflow-hidden active:cursor-grabbing"
           style={{
             backgroundImage: "radial-gradient(circle, #E8E4DC 1px, transparent 1px)",
             backgroundSize: `${24 * transform.scale}px ${24 * transform.scale}px`,
