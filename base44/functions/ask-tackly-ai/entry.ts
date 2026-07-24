@@ -6,8 +6,14 @@ import { classifyForTier } from "../../shared/llm.ts";
 // every plan (no checkQuota call — see PLAN.md). Shares the same tier-config
 // system as T1/T2 (Admin > Config > LLM models, tier "chat"), so an admin can
 // point it at a different provider/model the same test-before-activate way.
+//
+// Deliberately NOT persisted anywhere — no ChatMessage entity, nothing
+// written to the DB. The client keeps the running conversation in memory for
+// the current panel session and resends a trimmed slice as `history` on each
+// call for multi-turn continuity; navigating away loses it, which is the
+// intended behavior (per user feedback: storing every Q&A forever was just
+// wasted storage for a throwaway local chat).
 const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
-const HISTORY_LIMIT = 40; // ~20 turns of prior conversation kept as context
 const NODE_LIMIT = 300;
 
 const ANSWER_TOOL = {
@@ -81,10 +87,16 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { session_id, question } = await req.json();
+    const { session_id, question, history } = await req.json();
     if (!session_id || !question || !question.trim()) {
       return Response.json({ error: "session_id and question are required" }, { status: 400 });
     }
+    const safeHistory: { role: string; text: string }[] = Array.isArray(history)
+      ? history
+          .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string")
+          .slice(-40)
+          .map((m) => ({ role: m.role, text: String(m.text).slice(0, 2000) }))
+      : [];
 
     // RLS scopes reads to the caller, so a foreign session comes back not-found
     const session = await base44.entities.Session.get(session_id);
@@ -92,10 +104,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const [nodes, history] = await Promise.all([
-      base44.entities.Node.filter({ session_id }, "created_date", NODE_LIMIT),
-      base44.entities.ChatMessage.filter({ session_id }, "created_date", HISTORY_LIMIT),
-    ]);
+    const nodes = await base44.entities.Node.filter({ session_id }, "created_date", NODE_LIMIT);
     const visibleNodes = nodes.filter((n) => !n.hidden && !n.provisional);
 
     const { data, costUsd } = await classifyForTier({
@@ -103,7 +112,7 @@ Deno.serve(async (req) => {
       tier: "chat",
       defaultModel: DEFAULT_MODEL,
       system: SYSTEM,
-      user: buildUserPrompt(session, visibleNodes, history, question.trim()),
+      user: buildUserPrompt(session, visibleNodes, safeHistory, question.trim()),
       tool: ANSWER_TOOL,
       maxTokens: 1024,
     });
@@ -119,12 +128,7 @@ Deno.serve(async (req) => {
       ? data.answer.trim()
       : "I couldn't come up with an answer for that — try rephrasing?";
 
-    const [userMsg, aiMsg] = await Promise.all([
-      base44.entities.ChatMessage.create({ session_id, role: "user", text: question.trim() }),
-      base44.entities.ChatMessage.create({ session_id, role: "assistant", text: answer }),
-    ]);
-
-    return Response.json({ question: userMsg, answer: aiMsg });
+    return Response.json({ answer });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 500 });
   }

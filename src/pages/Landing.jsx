@@ -138,28 +138,50 @@ export default function Landing() {
           </div>
         </section>
 
+        <ScrollRevealText text={ABOUT_TEXT} />
+
         <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:pb-24">
-          <div className="flex flex-col items-start gap-6 rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm sm:flex-row sm:items-center sm:p-8">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-periwinkle-tint">
-              <Sparkles className="h-6 w-6 text-periwinkle-deep" />
-            </div>
+          <div className="grid items-center gap-8 rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm sm:grid-cols-2 sm:p-8">
             <div>
               <div className="flex flex-wrap items-center gap-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-periwinkle-tint">
+                  <Sparkles className="h-5 w-5 text-periwinkle-deep" />
+                </div>
                 <p className="font-display text-xl font-bold text-ink">TacklyAI</p>
                 <span className="rounded-full border-2 border-ink bg-note-mint px-2.5 py-0.5 text-xs font-bold text-ink">
                   On every plan
                 </span>
               </div>
-              <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-soft">
+              <p className="mt-4 text-sm leading-relaxed text-ink-soft">
                 Ask questions right on the board — "what was the main action?", "what risks came up?" — and get
                 answers grounded only in that thread's own nodes and transcript. No digging back through the map
-                yourself.
+                yourself, and nothing about the chat is stored — ask, get your answer, move on.
               </p>
+            </div>
+
+            <div className="overflow-hidden rounded-xl border-2 border-ink bg-paper shadow-brutal-sm">
+              <div className="flex items-center gap-1.5 border-b border-line px-3 py-2">
+                <Sparkles className="h-3.5 w-3.5 text-periwinkle-deep" />
+                <span className="font-display text-sm font-bold text-ink">TacklyAI</span>
+                <span className="text-xs text-ink-faint">— Sunday brain dump</span>
+              </div>
+              <div className="space-y-2 px-3 py-4">
+                <div
+                  className="ml-auto w-fit max-w-[85%] animate-fade-up rounded-xl bg-periwinkle px-3 py-2 text-sm text-white"
+                  style={{ animationDelay: "150ms" }}
+                >
+                  Can I speak with my thoughts?
+                </div>
+                <div
+                  className="w-fit max-w-[85%] animate-fade-up rounded-xl bg-paper-sunken px-3 py-2 text-sm text-ink"
+                  style={{ animationDelay: "550ms" }}
+                >
+                  That's my whole job — I already read this entire board before you finished typing. ⚡ Ask away.
+                </div>
+              </div>
             </div>
           </div>
         </section>
-
-        <ScrollRevealText text={ABOUT_TEXT} />
 
         <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:pb-24">
           <div className="mx-auto max-w-xl text-center">

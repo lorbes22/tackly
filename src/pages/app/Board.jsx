@@ -997,7 +997,7 @@ export default function Board() {
             <span className="hidden md:inline">Transcript</span>
           </button>
 
-          <TacklyAIPanel sessionId={sessionId} />
+          <TacklyAIPanel sessionId={sessionId} sessionTitle={session?.title} />
 
           <div className="relative">
             <button
