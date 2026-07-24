@@ -83,7 +83,13 @@
       "type": "number",
       "default": 0,
       "minimum": 0,
-      "description": "Running estimated Anthropic API cost (USD) for this session — Tier-1/Tier-2/partial-guess calls each add their own call's cost via $inc as they happen (see base44/shared/claude.ts estimateCostUsd). Estimated from real per-call token usage x published per-model pricing, not billed truth — good for relative comparisons and admin cost/min, not a guaranteed match to the Anthropic invoice."
+      "description": "Running estimated Anthropic API cost (USD) for calls made directly against the Anthropic API for this session — Tier-1 and partial-guess calls each add their own call's cost via $inc as they happen (see base44/shared/claude.ts estimateCostUsd). Tier-2 no longer contributes to this field — see gateway_credits_used. Estimated from real per-call token usage x published per-model pricing, not billed truth — good for relative comparisons and admin cost/min, not a guaranteed match to the Anthropic invoice."
+    },
+    "gateway_credits_used": {
+      "type": "number",
+      "default": 0,
+      "minimum": 0,
+      "description": "Running Base44 AI Gateway credits consumed by this session's Tier-2 consolidation calls (base44/shared/gateway.ts, consolidate-session), added via $inc from the gateway response's usage.base44_credits as they happen. A different unit than llm_cost_usd (that's a USD estimate for direct Anthropic calls) — convert to USD using your Base44 plan's credit rate."
     }
   },
   "required": ["type", "title"],

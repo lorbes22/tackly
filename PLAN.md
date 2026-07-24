@@ -221,6 +221,32 @@ Round 1 cut the dominant cost driver but a real 6-minute session still ran ~$0.0
 
 **Not verified in-browser:** same standing caveat — no login credentials available here for `tackly.co`. The lifecycle bug fix is a React effect-timing fix verified by code reasoning (and by confirming the backend side converges correctly in isolation via `base44 exec`), not by reproducing the actual stuck-UI state live.
 
+### Round 6 (2026-07-24) — Tier-2 moved off the direct Anthropic API to Base44's AI Gateway, admin cost/min metric fixed
+
+**Tier-2 (consolidate-session) now calls Base44's AI Gateway instead of the Anthropic API directly, using Sonnet.** Prompted by: since Tier-2 isn't on the live-typing path (nothing user-facing blocks on it the way Tier-1 does), why not route it through Base44's own billing instead of the raw Anthropic key — cheaper, and lets us go back to Sonnet-quality judgment for merges/edges.
+
+Two Base44 AI surfaces were considered, and it's worth being precise about which does what (this was gotten wrong in conversation before landing on it):
+- **`integrations.Core.InvokeLLM`** — takes `prompt` / `response_json_schema` / `file_urls` / `add_context_from_internet`. **No `model` parameter exists at all** — it always runs Base44's own default model. Not usable if a specific model (Sonnet) is required.
+- **`base44.aiGateway`** (the AI Gateway) — an OpenAI-compatible Chat Completions endpoint (`connection()` → `{baseURL, token}`), billed the same way (app credit quota) but **does** take a `model` id. This is the one that was actually needed.
+
+Confirmed live via `base44 exec` against the real gateway before writing any function code (not guessed from docs alone):
+- Model id `claude_sonnet_4_6` resolves (per the gateway's own `"model"` field in the response) to `claude-sonnet-4-6` — a slightly older Sonnet than the `claude-sonnet-5` used directly elsewhere in the pipeline, not literally the same model, but a real step up from Haiku for judgment-heavy merge/edge decisions.
+- Function/tool-calling works the standard OpenAI way (`tools: [{type:"function", function:{name, description, parameters}}]` + `tool_choice: {type:"function", function:{name}}`), verified with the real `record_consolidation` schema against a hand-built 4-node test case — correctly merged the true duplicate and proposed sensible edges.
+- Every response includes `usage: {prompt_tokens, completion_tokens, base44_credits}` — `base44_credits` is the actual per-call cost in Base44's own unit, not a token count we'd need to convert ourselves.
+- **No published $-per-credit rate is available from here** (would require checking the Base44 billing dashboard directly, which needs login credentials not available in this environment) — the user is verifying the real $ cost and per-session credit consumption themselves in the app.
+
+What's traded away by this move, both real and worth tracking if Tier-2 quality or cost looks off later:
+- **Anthropic prompt-caching is gone on this path.** The OpenAI-compatible schema has no `cache_control` equivalent, so Tier-2's system prompt (previously cached via `classifyWithTool`, see Round 1/consolidate-session's file comment) is now billed in full on every call. Tier-2 fires far less often than Tier-1 per session, so the absolute impact should be small, but it's a real regression relative to the immediately-prior Haiku+caching setup, not a wash.
+- **USD cost tracking doesn't carry over.** `llm_cost_usd` (the existing per-session $-estimate field, still used by Tier-1/`classify-partial`) is computed from raw Anthropic token counts against a known $/MTok table (`shared/claude.ts`) — the gateway has neither of those, only `base44_credits`. Added a **separate** field, `gateway_credits_used` (Session entity), incremented via the same awaited-`$inc` pattern as `llm_cost_usd` (avoiding the fire-and-forget race bug from Round 1). The two numbers are genuinely different units and are not summed together anywhere.
+
+**Implementation:** new `base44/shared/gateway.ts` (`classifyWithGatewayTool`) — the AI-Gateway equivalent of `shared/claude.ts`'s `classifyWithTool`, kept in its own file rather than added to `claude.ts` since that file's whole framing is "direct Anthropic calls." `consolidate-session/entry.ts` swapped its import and call site; `TIER2_MODEL` is now `"claude_sonnet_4_6"`; cost logging switched from `estimateCostUsd` to reading `usage.base44_credits` straight off the gateway response.
+
+**Verified** end-to-end via `base44 exec`: created 4 real scratch nodes (2 true near-duplicates, 1 question, 1 decision answering it) under a scratch session, invoked the real deployed `consolidate-session` function exactly as the frontend would. Result: 1 correct merge, 2 sensible edges (`answers`, `addresses`), `gateway_credits_used` landed at `16` on the session afterward, `llm_cost_usd` correctly stayed at `0` (no direct-Anthropic call happened). Scratch data deleted afterward.
+
+**Admin cost/min metric fixed.** Reported bug: the dashboard's avg LLM cost/min looked wrong, dragged down by old sessions that predate cost tracking entirely (`llm_cost_usd` defaults to `0` on those, but they still have a real `billed_ms`, so they were inflating the minutes-denominator with no matching cost-numerator). Fixed in `admin-session-stats/entry.ts` by only counting a completed session's `billed_ms` toward the denominator when it actually has `llm_cost_usd > 0` (i.e., was actually measured) — equivalent to "start the average from when tracking began" without needing a hardcoded cutoff date. Applied the same gating to the new `gateway_credits_used`/`avg_gateway_credits_per_minute` pair. Verified live via `base44 exec`: `avg_cost_per_minute_usd` now reads `$0.0244` over `22` tracked minutes (previously diluted across all historical billed minutes). Both new gateway-credit fields also added as a fifth `StatTile` on the admin Overview page.
+
+**Not verified in-browser:** the Overview page's new StatTile — built and reviewed in code, not screenshotted live (same standing caveat, no login credentials available here for `tackly.co`). The backend pieces (gateway call, cost fields, stats aggregation) were verified directly against production via `base44 exec`, per this session's established methodology.
+
 ---
 
 ## 2. Node taxonomy & identification logic
