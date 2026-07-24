@@ -15,11 +15,25 @@ const CARDS = [
 
 export function HeroNodePopups() {
   return (
-    <div className="absolute inset-0 pointer-events-none lg:pointer-events-auto" aria-hidden="true">
+    // Fixed height, not inset-0/full-section: the section's own height
+    // balloons on mobile once the headline wraps across more lines, and
+    // since the arc's top/left are both percentages, a tall-but-narrow
+    // container turned the dome into a sharp spike (big vertical swing,
+    // small horizontal one). Pinning a sane height per breakpoint keeps
+    // the same shallow-dome proportions everywhere.
+    <div
+      className="pointer-events-none absolute inset-x-0 top-0 h-[170px] sm:h-[240px] lg:h-[460px] lg:pointer-events-auto"
+      aria-hidden="true"
+    >
       {CARDS.map((c) => (
+        // NodeCard has its own fixed width (w-56), so the actual on-screen
+        // size only ever comes from the scale() in the hero-arc keyframe —
+        // --arc-scale multiplies that per breakpoint (full size at lg,
+        // shrunk well down on phones, where 5 full-size cards in a much
+        // narrower dome read as an overlapping pile rather than an arc).
         <div
           key={c.title}
-          className="hero-arc-node w-20 sm:w-24 lg:w-32"
+          className="hero-arc-node [--arc-scale:0.4] sm:[--arc-scale:0.55] lg:[--arc-scale:1]"
           style={{ animationDelay: c.delay }}
         >
           <NodeCard
