@@ -22,20 +22,10 @@ Deno.serve(async (req) => {
     // LLM cost/minute (PLAN.md §1d): only completed sessions, since billed_ms
     // is only finalized at completion — an in-progress session's cost so far
     // would understate its eventual per-minute rate. llm_cost_usd itself
-    // accumulates across a session's whole life, it's just the denominator
-    // (billed minutes) that needs status === "complete".
-    //
-    // Sessions from before cost tracking existed have llm_cost_usd stuck at
-    // its default of 0 but still have a real billed_ms — folding those into
-    // the denominator here would silently drag avg_cost_per_minute_usd down
-    // (real cost / inflated minutes). Gated on llm_cost_usd > 0 so only
-    // sessions that were actually measured count toward the average — this
-    // is effectively "start the average from when tracking began" without
-    // needing a hardcoded cutoff date.
+    // accumulates across a session's whole life (all three call sites), it's
+    // just the denominator (billed minutes) that needs status === "complete".
     let costUsd = 0;
-    let costTrackedMs = 0;
-    let gatewayCredits = 0;
-    let creditsTrackedMs = 0;
+    let billedMs = 0;
 
     for (const s of sessions) {
       if (s.capture_source && byCapture[s.capture_source] != null) {
@@ -43,14 +33,8 @@ Deno.serve(async (req) => {
       }
       if (s.status === "complete") {
         completed++;
-        if (s.llm_cost_usd) {
-          costUsd += s.llm_cost_usd;
-          costTrackedMs += s.billed_ms || 0;
-        }
-        if (s.gateway_credits_used) {
-          gatewayCredits += s.gateway_credits_used;
-          creditsTrackedMs += s.billed_ms || 0;
-        }
+        costUsd += s.llm_cost_usd || 0;
+        billedMs += s.billed_ms || 0;
       }
       if (typeof s.rating === "number") {
         ratingSum += s.rating;
@@ -59,8 +43,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    const costTrackedMinutes = costTrackedMs / 60000;
-    const creditsTrackedMinutes = creditsTrackedMs / 60000;
+    const billedMinutes = billedMs / 60000;
 
     return Response.json({
       total_sessions: sessions.length,
@@ -70,10 +53,8 @@ Deno.serve(async (req) => {
       avg_rating: ratingCount ? Number((ratingSum / ratingCount).toFixed(2)) : null,
       rating_breakdown: ratingBreakdown,
       total_llm_cost_usd: Number(costUsd.toFixed(4)),
-      avg_cost_per_minute_usd: costTrackedMinutes > 0 ? Number((costUsd / costTrackedMinutes).toFixed(4)) : null,
-      billed_minutes: Math.round(costTrackedMinutes),
-      total_gateway_credits: Number(gatewayCredits.toFixed(2)),
-      avg_gateway_credits_per_minute: creditsTrackedMinutes > 0 ? Number((gatewayCredits / creditsTrackedMinutes).toFixed(2)) : null,
+      avg_cost_per_minute_usd: billedMinutes > 0 ? Number((costUsd / billedMinutes).toFixed(4)) : null,
+      billed_minutes: Math.round(billedMinutes),
     });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 500 });

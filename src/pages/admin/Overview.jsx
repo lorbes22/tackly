@@ -104,21 +104,7 @@ export default function Overview() {
           }
           hint={
             stats
-              ? `$${stats.total_llm_cost_usd.toFixed(2)} across ${stats.billed_minutes} tracked min — Tier-1 only now, estimated, see PLAN.md §1d`
-              : "Loading…"
-          }
-        />
-        <StatTile
-          icon={DollarSign}
-          label="Avg. gateway credits / min"
-          value={
-            stats?.avg_gateway_credits_per_minute != null
-              ? stats.avg_gateway_credits_per_minute.toFixed(2)
-              : "—"
-          }
-          hint={
-            stats
-              ? `${stats.total_gateway_credits.toFixed(0)} credits — Tier-2 via Base44 AI Gateway, see PLAN.md §1d`
+              ? `$${stats.total_llm_cost_usd.toFixed(2)} across ${stats.billed_minutes} min (completed sessions) — estimated, see PLAN.md §1d`
               : "Loading…"
           }
         />

@@ -1,35 +1,26 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
-import { classifyWithGatewayTool } from "../../shared/gateway.ts";
+import { makeAnthropic, classifyWithTool, estimateCostUsd } from "../../shared/claude.ts";
 
 // Tier-2 consolidation: a pass over the whole session map that merges
 // near-duplicate nodes and proposes the connector edges between nodes that
 // Tier-1's narrow per-utterance context can't see.
 //
-// Cost note (PLAN.md §1d): this used to call Sonnet directly against the
-// Anthropic API with adaptive thinking, firing every 5 live utterances
-// (~6-12x per session) plus once at the end — that combination (pricier
-// model, thinking tokens billed as output, an uncached system prompt, resent
-// every call) was the single largest cost driver found in the pipeline.
-// First fix was switching to Haiku via a forced tool call (like Tier 1).
-// Second fix (this version): Tier 2 isn't on the live-typing path — nothing
-// user-facing is waiting on it the way Tier 1 is — so it doesn't need the
-// direct low-latency Anthropic connection Tier 1 needs. Moved it to Base44's
-// AI Gateway (`base44.aiGateway`, OpenAI-compatible endpoint) instead, which
-// bills against the app's own credit quota rather than the Anthropic API key,
-// and — unlike `integrations.Core.InvokeLLM`, which has no model parameter at
-// all — lets us pick a specific model. That means Sonnet-quality merge/edge
-// judgment is back without paying Anthropic's raw Sonnet rate. Model id
-// `claude_sonnet_4_6` resolves (per the gateway's own response) to
-// `claude-sonnet-4-6` — a slightly older Sonnet than the `claude-sonnet-5`
-// used directly elsewhere, not the literal same model, but still a real step
-// up from Haiku for this judgment-heavy pass. Traded away here: Anthropic
-// prompt-caching (no `cache_control` equivalent on this OpenAI-compatible
-// path, so the ~1KB system prompt is billed in full every call — small in
-// absolute terms since Tier 2 fires far less often than Tier 1) and USD cost
-// tracking (the gateway meters in `base44_credits`, not raw tokens against a
-// known $/MTok rate, so this is tracked in `gateway_credits_used` on the
-// session, separate from `llm_cost_usd` — see admin-session-stats).
-const TIER2_MODEL = "claude_sonnet_4_6";
+// Cost note (PLAN.md §1d): this used to call Sonnet with adaptive thinking,
+// firing every 5 live utterances (~6-12x per session) plus once at the end —
+// that combination (pricier model, thinking tokens billed as output, an
+// uncached system prompt, resent every call) was the single largest cost
+// driver found in the pipeline. Switched to Haiku via a forced tool call
+// (like Tier 1) instead of free-text JSON parsing, both because Haiku 4.5
+// doesn't support adaptive thinking and because a forced tool call is more
+// reliable structured output for a smaller model. This also fixes a real bug:
+// the old `reasonForJson` path passed `system` as a plain string with no
+// `cache_control`, so Tier 2's system prompt was never cached, unlike Tier
+// 1's — `classifyWithTool` caches it the same way Tier 1 does.
+// If Haiku's merge/edge judgment turns out too weak in testing, the fallback
+// is Sonnet with thinking OFF (not adaptive) — still cheaper than the
+// original setup, keeps Sonnet's stronger judgment, drops the thinking-token
+// bill. Swap TIER2_MODEL and add `thinking: undefined`/omit if so.
+const TIER2_MODEL = "claude-haiku-4-5-20251001";
 const RELATIONS = ["expands", "answers", "blocks", "addresses", "relates_to"];
 
 const TIER2_TOOL = {
@@ -156,9 +147,10 @@ Deno.serve(async (req) => {
         owner_email: session.owner_email || undefined,
       });
 
-    const { data: result, usage } = await classifyWithGatewayTool({
-      connection: base44.aiGateway.connection(),
+    const { data: result, usage } = await classifyWithTool({
+      client: makeAnthropic(),
       model: TIER2_MODEL,
+      maxTokens: 6000,
       system: TIER2_SYSTEM,
       tool: TIER2_TOOL,
       user: buildUserPrompt(
@@ -172,15 +164,15 @@ Deno.serve(async (req) => {
         sessionEdges,
       ),
     });
-    const callCredits = usage.base44_credits ?? 0;
-    if (callCredits > 0) {
+    const callCost = estimateCostUsd(TIER2_MODEL, usage);
+    if (callCost > 0) {
       // Awaited, not fire-and-forget: an un-awaited promise here can lose the
       // race against the function's own return when the merges/edges loops
       // below end up empty (confirmed happening in testing) — Deno Deploy
       // doesn't guarantee background work survives past the response.
       await base44.entities.Session.updateMany(
         { id: session_id },
-        { $inc: { gateway_credits_used: callCredits } },
+        { $inc: { llm_cost_usd: callCost } },
       ).catch(() => {});
     }
 
