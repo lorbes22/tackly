@@ -1,31 +1,57 @@
 import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
-import { BrainCircuit, CheckCircle2, XCircle } from "lucide-react";
+import { BrainCircuit, CheckCircle2, Pencil, XCircle } from "lucide-react";
 
 const LlmConfig = base44.entities.LlmConfig;
 
 // Fallback defaults when no LlmConfig row exists for a tier — must match
 // TIER1_MODEL / TIER2_MODEL in the backend functions (process-session /
-// consolidate-session). Display-only; the backend is the source of truth.
+// consolidate-session; classify-partial shares T1's config).
 const TIER_DEFAULTS = {
   t1: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
   t2: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
 };
 
 const TIER_LABELS = {
-  t1: { name: "T1 — Live classification", hint: "process-session — fires per utterance while a session is live." },
+  t1: {
+    name: "T1 — Live classification",
+    hint: "process-session + classify-partial's rough-guess pass — every utterance, live.",
+  },
   t2: { name: "T2 — Consolidation", hint: "consolidate-session — end-of-session merge & cross-link pass." },
 };
 
 const EMPTY_DRAFT = { provider: "anthropic", model: "", secret_env_var: "" };
 
+// Small "this is live" indicator — a settled dot with a fading ring pulsing
+// outward, the standard "currently active" affordance.
+function PulseDot() {
+  return (
+    <span className="relative flex h-2.5 w-2.5 shrink-0">
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+    </span>
+  );
+}
+
 function TierRow({ tier, active, onSaved }) {
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null); // { ok, error } | null
 
   const effective = active || { ...TIER_DEFAULTS[tier], secret_env_var: null, verified_at: null };
   const isDefault = !active;
+
+  const startEditing = () => {
+    setDraft({ provider: effective.provider, model: "", secret_env_var: "" });
+    setResult(null);
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+    setResult(null);
+  };
 
   const saveAndTest = async () => {
     if (!draft.model.trim() || !draft.secret_env_var.trim()) return;
@@ -40,7 +66,7 @@ function TierRow({ tier, active, onSaved }) {
       });
       if (res.data?.ok) {
         setResult({ ok: true });
-        setDraft(EMPTY_DRAFT);
+        setEditing(false);
         onSaved();
       } else {
         setResult({ ok: false, error: res.data?.error || "Test failed." });
@@ -57,6 +83,7 @@ function TierRow({ tier, active, onSaved }) {
     setResult(null);
     try {
       await base44.functions.invoke("admin-set-llm-config", { tier, revert: true });
+      setEditing(false);
       onSaved();
     } catch (err) {
       setResult({ ok: false, error: err.response?.data?.error || err.message });
@@ -67,67 +94,94 @@ function TierRow({ tier, active, onSaved }) {
 
   return (
     <div className="rounded-xl border border-line bg-paper p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-ink">{TIER_LABELS[tier].name}</p>
           <p className="text-xs text-ink-faint">{TIER_LABELS[tier].hint}</p>
         </div>
-        <div className="text-right">
-          <p className="font-mono text-sm text-ink">
-            {effective.provider} / {effective.model}
-          </p>
-          <p className="text-xs text-ink-faint">
-            {isDefault
-              ? "default"
-              : `verified ${new Date(effective.verified_at).toLocaleString()} by ${active.set_by_email || "admin"}`}
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <PulseDot />
+            <div className="text-right">
+              <p className="font-mono text-sm text-ink">
+                {effective.provider} / {effective.model}
+              </p>
+              <p className="text-xs text-ink-faint">
+                {isDefault
+                  ? "default"
+                  : `live since ${new Date(effective.verified_at).toLocaleString()}`}
+              </p>
+            </div>
+          </div>
+          {!editing && (
+            <button
+              onClick={startEditing}
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border-2 border-ink bg-paper-raised px-3 text-xs font-semibold text-ink shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+            >
+              <Pencil className="h-3 w-3" />
+              Change model
+            </button>
+          )}
         </div>
       </div>
 
-      {!isDefault && (
-        <button
-          onClick={revert}
-          disabled={busy}
-          className="mt-3 text-xs font-medium text-periwinkle hover:text-periwinkle-deep disabled:opacity-50"
-        >
-          Revert to default
-        </button>
-      )}
+      {editing && (
+        <div className="mt-3 border-t border-line pt-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[auto_1fr_1fr]">
+            <select
+              value={draft.provider}
+              onChange={(e) => setDraft((d) => ({ ...d, provider: e.target.value }))}
+              disabled={busy}
+              className="h-9 rounded-lg border border-line bg-paper-raised px-2.5 text-sm text-ink disabled:opacity-50"
+            >
+              <option value="anthropic">Anthropic</option>
+              <option value="google">Google</option>
+            </select>
+            <input
+              type="text"
+              value={draft.model}
+              onChange={(e) => setDraft((d) => ({ ...d, model: e.target.value }))}
+              placeholder="model id, e.g. gemini-3.5-flash-lite"
+              disabled={busy}
+              className="h-9 rounded-lg border border-line bg-paper-raised px-3 text-sm font-mono placeholder:text-ink-faint focus:border-periwinkle disabled:opacity-50"
+            />
+            <input
+              type="text"
+              value={draft.secret_env_var}
+              onChange={(e) => setDraft((d) => ({ ...d, secret_env_var: e.target.value }))}
+              placeholder="secret env var name"
+              disabled={busy}
+              className="h-9 rounded-lg border border-line bg-paper-raised px-3 text-sm font-mono placeholder:text-ink-faint focus:border-periwinkle disabled:opacity-50"
+            />
+          </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[auto_1fr_1fr_auto]">
-        <select
-          value={draft.provider}
-          onChange={(e) => setDraft((d) => ({ ...d, provider: e.target.value }))}
-          disabled={busy}
-          className="h-9 rounded-lg border border-line bg-paper-raised px-2.5 text-sm text-ink disabled:opacity-50"
-        >
-          <option value="anthropic">Anthropic</option>
-          <option value="google">Google</option>
-        </select>
-        <input
-          type="text"
-          value={draft.model}
-          onChange={(e) => setDraft((d) => ({ ...d, model: e.target.value }))}
-          placeholder="model id, e.g. gemini-3.5-flash"
-          disabled={busy}
-          className="h-9 rounded-lg border border-line bg-paper-raised px-3 text-sm font-mono placeholder:text-ink-faint focus:border-periwinkle disabled:opacity-50"
-        />
-        <input
-          type="text"
-          value={draft.secret_env_var}
-          onChange={(e) => setDraft((d) => ({ ...d, secret_env_var: e.target.value }))}
-          placeholder="secret env var name"
-          disabled={busy}
-          className="h-9 rounded-lg border border-line bg-paper-raised px-3 text-sm font-mono placeholder:text-ink-faint focus:border-periwinkle disabled:opacity-50"
-        />
-        <button
-          onClick={saveAndTest}
-          disabled={busy || !draft.model.trim() || !draft.secret_env_var.trim()}
-          className="h-9 shrink-0 rounded-lg bg-periwinkle px-4 text-sm font-semibold text-white transition-colors hover:bg-periwinkle-deep disabled:opacity-50"
-        >
-          {busy ? "Testing…" : "Save & Test"}
-        </button>
-      </div>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={saveAndTest}
+              disabled={busy || !draft.model.trim() || !draft.secret_env_var.trim()}
+              className="h-9 shrink-0 rounded-lg bg-periwinkle px-4 text-sm font-semibold text-white transition-colors hover:bg-periwinkle-deep disabled:opacity-50"
+            >
+              {busy ? "Testing…" : "Save & Test"}
+            </button>
+            <button
+              onClick={cancelEditing}
+              disabled={busy}
+              className="h-9 shrink-0 rounded-lg px-3 text-sm font-medium text-ink-soft hover:text-ink disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            {!isDefault && (
+              <button
+                onClick={revert}
+                disabled={busy}
+                className="ml-auto h-9 shrink-0 text-xs font-medium text-periwinkle hover:text-periwinkle-deep disabled:opacity-50"
+              >
+                Revert to default
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {result && (
         <p
@@ -175,8 +229,8 @@ export function LlmModelsCard() {
         1. Set the API key as a secret from your terminal first — it's never entered here:{" "}
         <code className="font-mono text-ink">npx base44 secrets set YOUR_KEY_NAME=sk-...</code>
         <br />
-        2. Below, enter that exact secret name (not the value), the provider, and the model id string
-        exactly as that provider's API expects it — Anthropic model ids from{" "}
+        2. Click "Change model" below, then enter that exact secret name (not the value), the provider,
+        and the model id string exactly as that provider's API expects it — Anthropic model ids from{" "}
         <span className="font-mono">docs.claude.com</span>, Google's from{" "}
         <span className="font-mono">ai.google.dev/gemini-api/docs/models</span>.
         <br />

@@ -1,10 +1,13 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
-import { classifyWithTool, estimateCostUsd, makeAnthropic } from "../../shared/claude.ts";
+import { classifyForTier } from "../../shared/llm.ts";
 
-// Stage 2 of provisional nodes (PLAN.md): a lightweight Haiku rough-guess over
-// the current PARTIAL transcript. Updates the still-forming node in place (type
+// Stage 2 of provisional nodes (PLAN.md): a lightweight rough-guess over the
+// current PARTIAL transcript. Updates the still-forming node in place (type
 // + title) and returns a confidence so the client can settle it early (~90%).
 // This is NOT authoritative — process-session on end_of_turn is (stage 3).
+// Shares tier "t1"'s LlmConfig with process-session (same live/fast path,
+// just running on an unfinished utterance) — whatever provider/model an
+// admin has activated for T1 governs this rough-guess pass too.
 const MODEL = "claude-haiku-4-5-20251001";
 const NODE_TYPES = ["topic", "idea", "evidence", "fact", "opinion", "question", "decision", "risk", "action", "plan", "waffle"];
 
@@ -45,22 +48,22 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, reason: "not provisional" });
     }
 
-    const { data, usage } = await classifyWithTool({
-      client: makeAnthropic(),
-      model: MODEL,
+    const { data, costUsd } = await classifyForTier({
+      base44,
+      tier: "t1",
+      defaultModel: MODEL,
       system: SYSTEM,
       user: `Partial (unfinished) utterance: "${text}"`,
       tool: TOOL,
       maxTokens: 256,
     });
-    const cost = estimateCostUsd(MODEL, usage);
-    if (cost > 0) {
+    if (costUsd > 0) {
       // Awaited, not fire-and-forget — see consolidate-session's comment on
       // the same pattern; an un-awaited write here can lose the race against
       // the function's own return.
       await base44.entities.Session.updateMany(
         { id: session_id },
-        { $inc: { llm_cost_usd: cost } },
+        { $inc: { llm_cost_usd: costUsd } },
       ).catch(() => {});
     }
     if (!data?.type || !NODE_TYPES.includes(data.type) || !data.title) {
