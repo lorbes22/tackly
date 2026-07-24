@@ -1,5 +1,5 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
-import { makeAnthropic, classifyWithTool } from "../../shared/claude.ts";
+import { makeAnthropic, classifyWithTool, estimateCostUsd } from "../../shared/claude.ts";
 
 // Tier-2 consolidation: a pass over the whole session map that merges
 // near-duplicate nodes and proposes the connector edges between nodes that
@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
         owner_email: session.owner_email || undefined,
       });
 
-    const { data: result } = await classifyWithTool({
+    const { data: result, usage } = await classifyWithTool({
       client: makeAnthropic(),
       model: TIER2_MODEL,
       maxTokens: 6000,
@@ -164,6 +164,17 @@ Deno.serve(async (req) => {
         sessionEdges,
       ),
     });
+    const callCost = estimateCostUsd(TIER2_MODEL, usage);
+    if (callCost > 0) {
+      // Awaited, not fire-and-forget: an un-awaited promise here can lose the
+      // race against the function's own return when the merges/edges loops
+      // below end up empty (confirmed happening in testing) — Deno Deploy
+      // doesn't guarantee background work survives past the response.
+      await base44.entities.Session.updateMany(
+        { id: session_id },
+        { $inc: { llm_cost_usd: callCost } },
+      ).catch(() => {});
+    }
 
     // Apply merges first; remap or drop anything touching a removed node
     const removedTo = new Map<string, string>();

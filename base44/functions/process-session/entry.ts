@@ -1,5 +1,5 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
-import { classifyWithTool, makeAnthropic } from "../../shared/claude.ts";
+import { classifyWithTool, estimateCostUsd, makeAnthropic } from "../../shared/claude.ts";
 import { checkQuota, computeBilledMs } from "../../shared/billing.ts";
 
 // All utterances for the session, used to finalize billed_ms the moment the
@@ -29,6 +29,44 @@ async function finalizeBilledMs(
 // per decision.
 const TIER1_MODEL = "claude-haiku-4-5-20251001";
 const IMPORT_BATCH_SIZE = 12;
+
+// Cheap pre-filter (no model call at all): a 1-2 word utterance that's
+// nothing but acknowledgement/filler words is going to come back "skip" from
+// the model anyway (see the SKIP bucket in TIER1_SYSTEM) — dropping it before
+// the API call saves the round-trip entirely instead of paying Haiku to tell
+// us what a word list already knows. Deliberately conservative: only fires
+// when EVERY word (max 2) is in the list, so "yeah, ship Friday" still goes
+// to the model. PLAN.md §1d.
+// Deliberately excludes bare "yes"/"no" — a one-word answer to a real
+// question upstream is substantive content (a decision/opinion), even
+// without visible context to prove it, so it should still reach the model
+// rather than being silently swallowed here.
+const FILLER_WORDS = new Set([
+  "um", "umm", "uh", "uhh", "er", "erm", "hmm", "mm", "mmhmm", "mm-hmm",
+  "okay", "ok", "yeah", "yep", "yup", "right", "alright", "sure", "so",
+  "well", "got", "it", "cool", "nice", "great", "let's", "lets", "see",
+  "hey", "hi", "hello", "thanks", "thank", "you", "bye",
+]);
+function isPureFiller(text: string): boolean {
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z\s'-]/g, "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0 || words.length > 2) return false;
+  return words.every((w) => FILLER_WORDS.has(w));
+}
+
+// Bound the node list sent to the model instead of resending every visible
+// node every utterance (uncapped growth over a long 30-45min session was a
+// real cost driver — PLAN.md §1d). Unconditionally keep every "topic" (the
+// natural parent for whole branches) and every still-open question/risk/
+// action (the likeliest attach target for what's said next), plus the most
+// recent OPEN_LIST_RECENCY nodes for everything else. Deliberate tradeoff: a
+// very old, already-resolved, non-topic node can age out of what the model
+// is shown as a possible parent/attach target.
+const OPEN_LIST_RECENCY = 50;
 const NODE_TYPES = ["topic", "idea", "question", "decision", "risk", "action", "evidence", "opinion", "waffle"];
 const OPEN_STATUS_TYPES = new Set(["question", "risk", "action"]);
 // leads_to is the general "one thought followed from another" flow — the
@@ -421,12 +459,21 @@ Deno.serve(async (req) => {
     // a stable attach target, and crucially the node we're finalizing this turn
     // must not be offered back to the classifier as something to attach to.
     const visibleNodes = existingNodes.filter((n) => !n.hidden && !n.provisional);
-    const openList = visibleNodes.map((n) => ({
-      id: n.id,
-      type: n.type,
-      title: n.title,
-      summary: (n.summary || "").slice(0, 160),
-    }));
+    const recentIds = new Set(visibleNodes.slice(-OPEN_LIST_RECENCY).map((n) => n.id));
+    const keepIds = new Set(
+      visibleNodes
+        .filter((n) => n.type === "topic" || n.status === "open")
+        .map((n) => n.id),
+    );
+    for (const id of recentIds) keepIds.add(id);
+    const openList = visibleNodes
+      .filter((n) => keepIds.has(n.id))
+      .map((n) => ({
+        id: n.id,
+        type: n.type,
+        title: n.title,
+        summary: (n.summary || "").slice(0, 160),
+      }));
 
     // Collision-resistant seq: derived from each op's utterance start_ms so ops
     // sort by speech order and concurrent calls (different utterances) never
@@ -445,24 +492,49 @@ Deno.serve(async (req) => {
         owner_email: session.owner_email || undefined,
       });
 
-    let result;
-    try {
-      ({ data: result } = await classifyWithTool({
-        client: makeAnthropic(),
-        model: TIER1_MODEL,
-        system: TIER1_SYSTEM,
-        user: buildUserPrompt(session.type, openList, batch, contextUtts),
-        tool: CLASSIFY_TOOL,
-      }));
-    } catch (err) {
-      // Release the claims so a retry can pick these utterances back up.
-      for (const u of batch) {
-        await base44.entities.Utterance.updateMany(
-          { id: u.id },
-          { $set: { processed: false } },
-        ).catch(() => {});
+    // Skip obvious filler before it ever reaches the model — classifyIdx maps
+    // positions in the (possibly smaller) list actually sent to the model
+    // back to positions in `batch`, so decisions still resolve to the right
+    // utterance below.
+    const classifyBatch: typeof batch = [];
+    const classifyIdx: number[] = [];
+    for (let i = 0; i < batch.length; i++) {
+      if (isPureFiller(batch[i].text)) continue;
+      classifyBatch.push(batch[i]);
+      classifyIdx.push(i);
+    }
+
+    let result: { decisions?: Record<string, unknown>[] } = { decisions: [] };
+    if (classifyBatch.length) {
+      try {
+        const { data, usage } = await classifyWithTool({
+          client: makeAnthropic(),
+          model: TIER1_MODEL,
+          system: TIER1_SYSTEM,
+          user: buildUserPrompt(session.type, openList, classifyBatch, contextUtts),
+          tool: CLASSIFY_TOOL,
+        });
+        result = data;
+        const cost = estimateCostUsd(TIER1_MODEL, usage);
+        if (cost > 0) {
+          // Awaited, not fire-and-forget — see consolidate-session's comment
+          // on the same pattern; an un-awaited write here can lose the race
+          // against the function's own return.
+          await base44.entities.Session.updateMany(
+            { id: session_id },
+            { $inc: { llm_cost_usd: cost } },
+          ).catch(() => {});
+        }
+      } catch (err) {
+        // Release the claims so a retry can pick these utterances back up.
+        for (const u of batch) {
+          await base44.entities.Utterance.updateMany(
+            { id: u.id },
+            { $set: { processed: false } },
+          ).catch(() => {});
+        }
+        throw err;
       }
-      throw err;
     }
 
     let created = 0;
@@ -502,7 +574,10 @@ Deno.serve(async (req) => {
     let edgesCreated = 0;
 
     for (const d of result?.decisions ?? []) {
-      const utt = batch[d.utterance_index];
+      // d.utterance_index refers to a position in classifyBatch (what the
+      // model actually saw), not `batch` directly — remap through classifyIdx.
+      const origIdx = classifyIdx[d.utterance_index];
+      const utt = origIdx !== undefined ? batch[origIdx] : undefined;
       if (!utt || d.action === "skip") continue;
       const baseMs = utt.start_ms ?? Date.now();
 
@@ -530,7 +605,7 @@ Deno.serve(async (req) => {
         // Only the FIRST new-node decision for utterance 0 claims it; any
         // additional decisions from a multi-item utterance create fresh nodes.
         let node;
-        if (provisional_node_id && d.utterance_index === 0 && !provisionalConsumed) {
+        if (provisional_node_id && origIdx === 0 && !provisionalConsumed) {
           provisionalConsumed = true;
           await base44.entities.Node.update(provisional_node_id, fields);
           node = { id: provisional_node_id, session_id, owner_user_id: user.id, ...fields };

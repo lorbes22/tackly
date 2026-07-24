@@ -19,18 +19,31 @@ Deno.serve(async (req) => {
     let ratingSum = 0;
     let ratingCount = 0;
     const ratingBreakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    // LLM cost/minute (PLAN.md §1d): only completed sessions, since billed_ms
+    // is only finalized at completion — an in-progress session's cost so far
+    // would understate its eventual per-minute rate. llm_cost_usd itself
+    // accumulates across a session's whole life (all three call sites), it's
+    // just the denominator (billed minutes) that needs status === "complete".
+    let costUsd = 0;
+    let billedMs = 0;
 
     for (const s of sessions) {
       if (s.capture_source && byCapture[s.capture_source] != null) {
         byCapture[s.capture_source]++;
       }
-      if (s.status === "complete") completed++;
+      if (s.status === "complete") {
+        completed++;
+        costUsd += s.llm_cost_usd || 0;
+        billedMs += s.billed_ms || 0;
+      }
       if (typeof s.rating === "number") {
         ratingSum += s.rating;
         ratingCount++;
         ratingBreakdown[s.rating] = (ratingBreakdown[s.rating] || 0) + 1;
       }
     }
+
+    const billedMinutes = billedMs / 60000;
 
     return Response.json({
       total_sessions: sessions.length,
@@ -39,6 +52,9 @@ Deno.serve(async (req) => {
       rating_count: ratingCount,
       avg_rating: ratingCount ? Number((ratingSum / ratingCount).toFixed(2)) : null,
       rating_breakdown: ratingBreakdown,
+      total_llm_cost_usd: Number(costUsd.toFixed(4)),
+      avg_cost_per_minute_usd: billedMinutes > 0 ? Number((costUsd / billedMinutes).toFixed(4)) : null,
+      billed_minutes: Math.round(billedMinutes),
     });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 500 });

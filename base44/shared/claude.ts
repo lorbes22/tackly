@@ -58,51 +58,34 @@ export async function classifyWithTool(opts: {
   return { data: block?.input ?? null, usage: res.usage as Usage };
 }
 
-// Tier 2 (slow path): Sonnet 5 with adaptive thinking on (the model decides
-// how much to reason) — the deeper pass PLAN.md wants, no tight latency
-// budget. Adaptive thinking is incompatible with a forced tool call, so the
-// model returns JSON in its text output and we parse it. Sonnet 5 emits clean
-// JSON reliably when the schema is described and "return only JSON" is asked.
-export async function reasonForJson(opts: {
-  client: Anthropic;
-  model: string;
-  system: string;
-  user: string;
-  maxTokens?: number;
-}): Promise<{ data: any; usage: Usage }> {
-  const res = await opts.client.messages.create({
-    model: opts.model,
-    max_tokens: opts.maxTokens ?? 12000,
-    thinking: { type: "adaptive" },
-    system: opts.system,
-    messages: [{ role: "user", content: opts.user }],
-  });
-  const text = res.content
-    .filter((b: { type: string }) => b.type === "text")
-    .map((b: { text: string }) => b.text)
-    .join("")
-    .trim();
-  return { data: parseJson(text), usage: res.usage as Usage };
-}
+// Cost estimation (PLAN.md §1d): published per-model rates (checked against
+// platform.claude.com/docs/en/docs/about-claude/pricing on 2026-07-24 — the
+// Sonnet 5 row is INTRODUCTORY pricing in effect through 2026-08-31; it rises
+// after that, update the sonnet entry then). `input`/`cacheWrite`/
+// `cacheRead`/`output` are all $ per million tokens. `cache_read_input_tokens`
+// and `cache_creation_input_tokens` are separate counters from `input_tokens`
+// in Anthropic's usage object (not included in it), so all four are summed
+// independently below — do not double-count `input_tokens` as already
+// including cached tokens.
+const MODEL_PRICING_PER_MTOK: Record<
+  string,
+  { input: number; cacheWrite: number; cacheRead: number; output: number }
+> = {
+  "claude-haiku-4-5-20251001": { input: 1, cacheWrite: 1.25, cacheRead: 0.1, output: 5 },
+  "claude-sonnet-5": { input: 2, cacheWrite: 2.5, cacheRead: 0.2, output: 10 },
+};
 
-function parseJson(text: string): any {
-  if (!text) return null;
-  let t = text.trim();
-  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence) t = fence[1].trim();
-  try {
-    return JSON.parse(t);
-  } catch {
-    // Fall back to the outermost {...} span if there's stray prose around it
-    const first = t.indexOf("{");
-    const last = t.lastIndexOf("}");
-    if (first !== -1 && last > first) {
-      try {
-        return JSON.parse(t.slice(first, last + 1));
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
+// Estimated USD cost of one call, from the model's own reported token usage.
+// This is an estimate for relative cost tracking (e.g. admin $/min, before vs
+// after a pipeline change) — not a guaranteed match to the actual Anthropic
+// invoice (no volume discounts, batch pricing, etc. are accounted for).
+export function estimateCostUsd(model: string, usage: Usage): number {
+  const p = MODEL_PRICING_PER_MTOK[model];
+  if (!p) return 0;
+  const cost =
+    (usage.input_tokens ?? 0) * p.input +
+    (usage.cache_creation_input_tokens ?? 0) * p.cacheWrite +
+    (usage.cache_read_input_tokens ?? 0) * p.cacheRead +
+    (usage.output_tokens ?? 0) * p.output;
+  return cost / 1_000_000;
 }

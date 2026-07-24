@@ -1,5 +1,5 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
-import { classifyWithTool, makeAnthropic } from "../../shared/claude.ts";
+import { classifyWithTool, estimateCostUsd, makeAnthropic } from "../../shared/claude.ts";
 
 // Stage 2 of provisional nodes (PLAN.md): a lightweight Haiku rough-guess over
 // the current PARTIAL transcript. Updates the still-forming node in place (type
@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, reason: "not provisional" });
     }
 
-    const { data } = await classifyWithTool({
+    const { data, usage } = await classifyWithTool({
       client: makeAnthropic(),
       model: MODEL,
       system: SYSTEM,
@@ -53,6 +53,16 @@ Deno.serve(async (req) => {
       tool: TOOL,
       maxTokens: 256,
     });
+    const cost = estimateCostUsd(MODEL, usage);
+    if (cost > 0) {
+      // Awaited, not fire-and-forget — see consolidate-session's comment on
+      // the same pattern; an un-awaited write here can lose the race against
+      // the function's own return.
+      await base44.entities.Session.updateMany(
+        { id: session_id },
+        { $inc: { llm_cost_usd: cost } },
+      ).catch(() => {});
+    }
     if (!data?.type || !NODE_TYPES.includes(data.type) || !data.title) {
       return Response.json({ ok: false });
     }

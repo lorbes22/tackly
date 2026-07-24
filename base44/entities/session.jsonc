@@ -78,6 +78,12 @@
     "rating_feedback": {
       "type": "string",
       "description": "Optional free-text feedback given alongside the rating."
+    },
+    "llm_cost_usd": {
+      "type": "number",
+      "default": 0,
+      "minimum": 0,
+      "description": "Running estimated Anthropic API cost (USD) for this session — Tier-1/Tier-2/partial-guess calls each add their own call's cost via $inc as they happen (see base44/shared/claude.ts estimateCostUsd). Estimated from real per-call token usage x published per-model pricing, not billed truth — good for relative comparisons and admin cost/min, not a guaranteed match to the Anthropic invoice."
     }
   },
   "required": ["type", "title"],

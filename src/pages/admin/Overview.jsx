@@ -94,6 +94,20 @@ export default function Overview() {
           value={stats?.avg_rating != null ? `${stats.avg_rating} / 5` : "—"}
           hint={stats ? `${stats.rating_count} ratings given` : "Loading…"}
         />
+        <StatTile
+          icon={DollarSign}
+          label="Avg. LLM cost / min"
+          value={
+            stats?.avg_cost_per_minute_usd != null
+              ? `$${stats.avg_cost_per_minute_usd.toFixed(4)}`
+              : "—"
+          }
+          hint={
+            stats
+              ? `$${stats.total_llm_cost_usd.toFixed(2)} across ${stats.billed_minutes} min (completed sessions) — estimated, see PLAN.md §1d`
+              : "Loading…"
+          }
+        />
       </div>
 
       {stats && stats.rating_count > 0 && (
