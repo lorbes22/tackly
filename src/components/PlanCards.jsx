@@ -4,23 +4,21 @@ import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { Check } from "lucide-react";
 
-// Shared plan-cards grid — used on the public /plans page and the landing
-// page's pricing teaser. Free is always the primary, fully-opaque plan (no
-// Stripe price needed, everyone's on it by default); paid plans dim to a
-// "coming soon" state while AppConfig.waitlist_mode is on, since checkout
-// isn't meant to be usable yet in that mode.
+// Shared plan-cards grid — used on the public /plans page, the landing
+// page's pricing teaser, and the "view plans" popup from Settings. Free is
+// always the primary, fully-opaque plan (no Stripe price needed, everyone's
+// on it by default). Plans are shown as real/visible regardless of
+// AppConfig.waitlist_mode — that flag only affects onboarding copy — a
+// plan only reads as unavailable when it genuinely has no stripe_price_id
+// configured yet.
 export function PlanCards({ className = "" }) {
   const { user } = useAuth();
   const [plans, setPlans] = useState(null);
-  const [waitlistMode, setWaitlistMode] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     base44.entities.Plan.list("price_monthly").then(setPlans).catch(() => setPlans([]));
-    base44.entities.AppConfig.list()
-      .then((rows) => setWaitlistMode(!!rows[0]?.waitlist_mode))
-      .catch(() => {});
   }, []);
 
   const upgrade = async (planId) => {
@@ -51,24 +49,20 @@ export function PlanCards({ className = "" }) {
           const isFree = !plan.price_monthly;
           const isCurrent = !!user && (user.plan_id || "") === plan.id;
           const isDefaultFree = !!user && isFree && !user.plan_id;
-          const dimmed = !isFree && waitlistMode;
-          const popular = !isFree && i === 1;
+          // Plus (the middle paid tier) is flagged as the most-used plan —
+          // a fixed marketing tag, not tied to waitlist mode or any state.
+          const mostUsed = !isFree && i === 1;
 
           return (
             <div
               key={plan.id}
-              className={`relative rounded-2xl border-2 border-ink p-6 shadow-brutal-sm transition-opacity ${
+              className={`relative rounded-2xl border-2 border-ink p-6 shadow-brutal-sm ${
                 isFree ? "bg-periwinkle-tint" : "bg-paper-raised"
-              } ${dimmed ? "opacity-50" : ""}`}
+              }`}
             >
-              {popular && !dimmed && (
+              {mostUsed && (
                 <span className="absolute -top-3 left-6 rounded-full border-2 border-ink bg-note-gold px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink shadow-brutal-sm">
-                  Popular
-                </span>
-              )}
-              {dimmed && (
-                <span className="absolute -top-3 left-6 rounded-full border-2 border-ink bg-paper-sunken px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink-soft shadow-brutal-sm">
-                  Coming soon
+                  Most used
                 </span>
               )}
               <p className="font-display text-lg font-bold text-ink">{plan.name}</p>
@@ -92,27 +86,14 @@ export function PlanCards({ className = "" }) {
                   <p className="flex h-10 items-center justify-center gap-1.5 rounded-xl border-2 border-ink bg-paper-raised font-display text-sm font-bold text-ink shadow-brutal-sm">
                     <Check className="h-4 w-4" /> Current plan
                   </p>
-                ) : isFree ? (
-                  user ? null : (
-                    <Link
-                      to="/signup"
-                      className="flex h-10 items-center justify-center rounded-xl border-2 border-ink bg-periwinkle font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
-                    >
-                      Get started free
-                    </Link>
-                  )
-                ) : dimmed ? (
-                  <p className="flex h-10 items-center justify-center rounded-xl border-2 border-ink/30 text-sm font-medium text-ink-faint">
-                    Not open yet
-                  </p>
                 ) : !user ? (
                   <Link
                     to="/signup"
                     className="flex h-10 items-center justify-center rounded-xl border-2 border-ink bg-periwinkle font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
                   >
-                    Get started
+                    {isFree ? "Get started free" : "Get started"}
                   </Link>
-                ) : plan.stripe_price_id ? (
+                ) : isFree ? null : plan.stripe_price_id ? (
                   <button
                     onClick={() => upgrade(plan.id)}
                     disabled={busyId === plan.id}

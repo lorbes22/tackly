@@ -1,14 +1,98 @@
 import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
-import { CreditCard } from "lucide-react";
+import { CreditCard, Plus, X } from "lucide-react";
 
 const Plan = base44.entities.Plan;
 
 // Plan RLS already allows admin-role updates directly (see plan.jsonc), so
 // this writes straight through the entity client — no backend function
-// needed just to set a field. Only stripe_price_id is editable here: it's
-// the one thing that actually needs pairing up by hand after creating the
-// matching recurring Price in the Stripe dashboard.
+// needed. Two things are editable: the Stripe Price id (paired by hand
+// after creating the matching recurring Price in the Stripe dashboard,
+// explicit Save since it's easy to mistype), and the marketing "perks"
+// list shown on the plan cards (each add/remove saves immediately — it's
+// just reordering/editing short strings, nothing worth a draft state for).
+function FeatureEditor({ plan, onChange }) {
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const persist = async (features) => {
+    setBusy(true);
+    setError("");
+    try {
+      await Plan.update(plan.id, { features });
+      onChange(features);
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || "Couldn't save that change.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const add = () => {
+    const text = draft.trim();
+    if (!text || busy) return;
+    setDraft("");
+    persist([...(plan.features || []), text]);
+  };
+
+  const remove = (index) => {
+    if (busy) return;
+    persist((plan.features || []).filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="mt-4">
+      <span className="mb-1.5 block text-xs font-medium text-ink-soft">Perks shown on this plan's card</span>
+      <ul className="space-y-1.5">
+        {(plan.features || []).map((f, i) => (
+          <li
+            key={`${f}-${i}`}
+            className="flex items-center justify-between gap-2 rounded-lg border border-line bg-paper px-3 py-1.5 text-sm text-ink"
+          >
+            {f}
+            <button
+              onClick={() => remove(i)}
+              disabled={busy}
+              title="Remove perk"
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-ink-faint hover:bg-note-coral hover:text-ink disabled:opacity-50"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </li>
+        ))}
+        {(plan.features || []).length === 0 && (
+          <li className="text-sm text-ink-faint">No perks listed yet.</li>
+        )}
+      </ul>
+      <div className="mt-2 flex gap-2">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          placeholder="Add a perk…"
+          className="h-9 flex-1 rounded-lg border border-line bg-paper-raised px-3 text-sm placeholder:text-ink-faint focus:border-periwinkle"
+        />
+        <button
+          onClick={add}
+          disabled={busy || !draft.trim()}
+          title="Add perk"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-periwinkle text-white transition-colors hover:bg-periwinkle-deep disabled:opacity-50"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
+      {error && <p className="mt-2 text-xs text-note-coral-edge">{error}</p>}
+    </div>
+  );
+}
+
 export default function PlansPage() {
   const [plans, setPlans] = useState(null);
   const [drafts, setDrafts] = useState({});
@@ -39,6 +123,10 @@ export default function PlansPage() {
     }
   };
 
+  const setFeatures = (planId, features) => {
+    setPlans((prev) => prev.map((p) => (p.id === planId ? { ...p, features } : p)));
+  };
+
   return (
     <div className="mx-auto max-w-2xl animate-fade-up">
       <div className="flex items-center gap-3">
@@ -50,7 +138,7 @@ export default function PlansPage() {
             Plans &amp; billing
           </h1>
           <p className="text-sm text-ink-soft">
-            Pair each plan with its Stripe Price id to enable checkout.
+            Pair each plan with its Stripe Price id, and edit the perks shown on its card.
           </p>
         </div>
       </div>
@@ -98,6 +186,8 @@ export default function PlansPage() {
                 </button>
               </div>
             </label>
+
+            <FeatureEditor plan={plan} onChange={(features) => setFeatures(plan.id, features)} />
           </div>
         ))}
       </div>

@@ -44,9 +44,14 @@ export default function Terms() {
       <ul>
         <li>Use the Service to violate any law or another person's rights, including privacy or recording-consent laws;</li>
         <li>Attempt to disrupt, reverse-engineer, or gain unauthorized access to the Service;</li>
+        <li>Abuse, circumvent, or automate around usage limits or plan quotas — for example, creating multiple accounts to get around the Free plan's monthly minutes, or scripting sessions to extract usage beyond normal individual use;</li>
         <li>Upload content you don't have the right to share; or</li>
         <li>Resell or provide the Service to third parties without our written permission.</li>
       </ul>
+      <p>
+        Violating any of the above is grounds for suspending or removing your account, at our
+        discretion, without a refund of any unused portion of a paid plan.
+      </p>
 
       <h2>5. Your content</h2>
       <p>
@@ -57,10 +62,20 @@ export default function Terms() {
 
       <h2>6. Plans and billing</h2>
       <p>
-        Tackly offers free and paid usage tiers. Paid plans are billed on a recurring
-        basis through our payment processor. Fees are non-refundable except where
-        required by law. We may change pricing with advance notice; continued use
-        after a price change takes effect means you accept the new pricing.
+        Tackly offers a Free plan (a monthly allowance of transcript minutes, no card
+        required) and paid plans with higher limits. Paid plans are billed on a
+        recurring monthly basis through Stripe, our payment processor — we never see
+        or store your card details ourselves. You can upgrade, downgrade, or cancel a
+        paid plan at any time from Settings; cancelling stops future billing but
+        doesn't refund the current billing period.
+      </p>
+      <p>
+        Plan features, minute allowances, and prices may change from time to time.
+        If we change the price of a plan you're subscribed to, we'll notify you
+        (by email or in-app) with reasonable advance notice before it takes effect —
+        continued use of a paid plan after a price change takes effect means you
+        accept the new price. Fees already paid are non-refundable except where
+        required by law.
       </p>
 
       <h2>7. Third-party services</h2>
@@ -75,8 +90,10 @@ export default function Terms() {
       <h2>8. Termination</h2>
       <p>
         You can stop using Tackly and delete your account at any time from Settings.
-        We may suspend or terminate accounts that violate these Terms or applicable
-        law.
+        We may suspend or remove accounts that violate these Terms — including the
+        acceptable-use and misuse provisions in Section 4 — or applicable law,
+        with or without notice depending on severity. Where reasonably possible,
+        we'll try to warn you first for lower-severity issues.
       </p>
 
       <h2>9. Disclaimers and limitation of liability</h2>

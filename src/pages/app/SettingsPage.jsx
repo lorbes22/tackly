@@ -1,17 +1,20 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { UsageBadge } from "@/components/UsageBadge";
+import { PlansModal } from "@/components/PlansModal";
 import { Calendar, PartyPopper } from "lucide-react";
 
-// Just this account's plan: usage, manage-billing, and a link out to the
-// full plan comparison (public /plans page) rather than repeating the whole
-// grid here — Settings is "your account", not a pricing page.
+// Just this account's plan: usage, manage-billing, and a "view plans"
+// button that pops the full comparison grid up as a modal (PlansModal) —
+// logged-in users stay on Settings rather than being navigated to the
+// public /plans page.
 function PlansSection() {
   const { user, refresh } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showPlans, setShowPlans] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const checkoutStatus = searchParams.get("checkout");
 
@@ -58,14 +61,16 @@ function PlansSection() {
               {busy ? "Opening…" : "Manage billing"}
             </button>
           )}
-          <Link
-            to="/plans"
-            className="h-9 rounded-lg px-3.5 text-sm font-medium text-periwinkle-deep transition-colors hover:bg-periwinkle-tint"
+          <button
+            onClick={() => setShowPlans(true)}
+            className="flex h-9 items-center justify-center rounded-lg px-3.5 text-sm font-medium text-periwinkle-deep transition-colors hover:bg-periwinkle-tint"
           >
             View all plans →
-          </Link>
+          </button>
         </div>
       </div>
+
+      {showPlans && <PlansModal onClose={() => setShowPlans(false)} />}
 
       {(checkoutStatus === "success" || checkoutStatus === "cancel") && (
         <div

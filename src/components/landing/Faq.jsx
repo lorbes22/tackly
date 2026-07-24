@@ -50,7 +50,7 @@ function FaqItem({ item, open, onToggle }) {
 }
 
 export function Faq() {
-  const [openIndex, setOpenIndex] = useState(0);
+  const [openIndex, setOpenIndex] = useState(-1);
 
   return (
     <section className="mx-auto w-full max-w-3xl px-4 py-16 sm:py-24">
