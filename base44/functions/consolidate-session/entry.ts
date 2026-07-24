@@ -1,14 +1,62 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
-import { makeAnthropic, reasonForJson } from "../../shared/claude.ts";
+import { makeAnthropic, classifyWithTool } from "../../shared/claude.ts";
 
-// Tier-2 consolidation: a heavier pass over the whole session map, calling
-// Claude Sonnet 5 directly (not Base44's InvokeLLM) with adaptive thinking on
-// — no tight latency budget here, and the deeper reasoning is worth it
-// (PLAN.md §1). Merges near-duplicate nodes and proposes the connector edges
-// between nodes that Tier-1's narrow per-utterance context can't see.
-
-const TIER2_MODEL = "claude-sonnet-5";
+// Tier-2 consolidation: a pass over the whole session map that merges
+// near-duplicate nodes and proposes the connector edges between nodes that
+// Tier-1's narrow per-utterance context can't see.
+//
+// Cost note (PLAN.md §1d): this used to call Sonnet with adaptive thinking,
+// firing every 5 live utterances (~6-12x per session) plus once at the end —
+// that combination (pricier model, thinking tokens billed as output, an
+// uncached system prompt, resent every call) was the single largest cost
+// driver found in the pipeline. Switched to Haiku via a forced tool call
+// (like Tier 1) instead of free-text JSON parsing, both because Haiku 4.5
+// doesn't support adaptive thinking and because a forced tool call is more
+// reliable structured output for a smaller model. This also fixes a real bug:
+// the old `reasonForJson` path passed `system` as a plain string with no
+// `cache_control`, so Tier 2's system prompt was never cached, unlike Tier
+// 1's — `classifyWithTool` caches it the same way Tier 1 does.
+// If Haiku's merge/edge judgment turns out too weak in testing, the fallback
+// is Sonnet with thinking OFF (not adaptive) — still cheaper than the
+// original setup, keeps Sonnet's stronger judgment, drops the thinking-token
+// bill. Swap TIER2_MODEL and add `thinking: undefined`/omit if so.
+const TIER2_MODEL = "claude-haiku-4-5-20251001";
 const RELATIONS = ["expands", "answers", "blocks", "addresses", "relates_to"];
+
+const TIER2_TOOL = {
+  name: "record_consolidation",
+  description: "Record merges (near-duplicate nodes) and cross-link edges for the current node map.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      merges: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            keep_id: { type: "string" },
+            remove_id: { type: "string" },
+            merged_summary: { type: "string" },
+          },
+          required: ["keep_id", "remove_id"],
+        },
+      },
+      edges: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            from_id: { type: "string" },
+            to_id: { type: "string" },
+            relation: { type: "string", enum: RELATIONS },
+          },
+          required: ["from_id", "to_id", "relation"],
+        },
+      },
+    },
+    required: ["merges", "edges"],
+  },
+};
 
 const TIER2_SYSTEM = `You are the consolidation engine for Tackly, a tool that maps spoken thought into nodes. You are given the full node map for one session. Your job:
 
@@ -26,9 +74,7 @@ Rules:
 - A good map is sparse — prefer a handful of high-signal edges over a hairball.
 - Never propose an edge for a pair you are merging, an edge already listed as existing, or a self-edge.
 
-Return ONLY a JSON object (no prose, no markdown fences) of exactly this shape:
-{"merges":[{"keep_id":"<id>","remove_id":"<id>","merged_summary":"<text>"}],"edges":[{"from_id":"<id>","to_id":"<id>","relation":"expands|answers|blocks|addresses|relates_to"}]}
-merged_summary is optional. Both arrays may be empty.`;
+Record your findings via the record_consolidation tool. Both arrays may be empty.`;
 
 function buildUserPrompt(
   nodes: { id: string; type: string; title: string; summary: string; status: string }[],
@@ -101,15 +147,12 @@ Deno.serve(async (req) => {
         owner_email: session.owner_email || undefined,
       });
 
-    const { data: result } = await reasonForJson({
+    const { data: result } = await classifyWithTool({
       client: makeAnthropic(),
       model: TIER2_MODEL,
-      // Bounded down from the shared default (12000): this call was the
-      // single biggest contributor to the "Linking ideas…" wait feeling
-      // stuck on session end — merges/edges for a normal session's node
-      // count don't need the full adaptive ceiling.
       maxTokens: 6000,
       system: TIER2_SYSTEM,
+      tool: TIER2_TOOL,
       user: buildUserPrompt(
         nodes.map((n) => ({
           id: n.id,

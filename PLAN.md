@@ -98,6 +98,61 @@ Real subscriptions, replacing the admin-only manual plan assignment as the prima
 
 ---
 
+## 1d. Cost audit — transcript-to-node pipeline, as actually implemented (snapshot taken 2026-07-24, before any cost optimization work)
+
+Real usage testing showed roughly **$0.0667 per minute of session time**, and ending a solo session alone costs ~$0.07 (the "Linking ideas…" wrap-up step). This section is a factual snapshot of exactly what the pipeline sends to which model, how often, so the logic isn't lost while it gets cheaper. **No behavior has been changed yet as of this snapshot** — this is the "before" picture. See the findings at the end for where the money actually goes.
+
+### The three LLM call sites
+
+All three call the Anthropic API directly via the official SDK (`base44/shared/claude.ts`), not Base44's built-in `InvokeLLM` — that switch was made deliberately, to get prompt caching (`cache_control`) and forced tool-use, neither of which `InvokeLLM` exposed. Keep this in mind before reverting any of these to `InvokeLLM` — it would mean giving those two things up.
+
+**1. Stage-2 rough guess — `classify-partial` function.**
+- Model: `claude-haiku-4-5-20251001`.
+- Trigger: mic-live sessions only, debounced 500ms while partial (non-final) transcript text is still stabilizing mid-utterance (`Board.jsx` `handleMicPartial`). Fires at most once per ~500ms pause in an in-progress utterance, and stops firing early once confidence ≥ 0.9 settles it.
+- Payload: static cached system prompt (~250 tokens) + one line, the current partial utterance text. Tiny, cheap, not a meaningful cost driver.
+
+**2. Tier 1 classification — `process-session` function.**
+- Model: `claude-haiku-4-5-20251001`.
+- Trigger:
+  - **Live sessions (mic or bot):** once per finalized utterance, fired immediately and in parallel the instant each utterance ends (`liveProcess()` in `Board.jsx`) — never batched, never waits for a previous call to finish.
+  - **Import / wrap-up (non-live):** looped, pulling up to `IMPORT_BATCH_SIZE = 12` unprocessed utterances per call until none remain.
+- Payload per call:
+  - System prompt: large (~2,200 words, the full classification taxonomy + worked examples) but marked `cache_control: ephemeral` and byte-identical every call, so after the first call of a session it's served from Anthropic's prompt cache, not re-billed at full input price.
+  - User message (NOT cached — this part is different on every call):
+    - **The full list of every visible node in the session so far** (id/type/title/summary, summary truncated to 160 chars) — `openList`, uncapped, refetched and resent on every single utterance. This is the one part of the "whole conversation" that genuinely does get resent each time — not the raw transcript, but the growing node graph. It grows linearly with session length, so token cost per utterance grows the longer a session runs.
+    - A 3-utterance sliding-window of recent context (so a thought split across a pause reads as one thought).
+    - The new utterance(s) to classify (1 in live mode, up to 12 in import mode).
+  - Forced tool-use (`tool_choice: {type: "tool", ...}`) for structured output — output tokens are small and cheap regardless.
+- Result: emits `SessionOp` rows (`create_node` / `attach_node` / `create_edge`) per decision. The frontend never re-fetches or regenerates the board in response — it applies each op to in-memory state as it streams in via realtime. **This delta-based rendering already exists and is not a cost problem** — the cost lever here is the growing `openList` payload, not board re-rendering.
+
+**3. Tier 2 consolidation ("linking") — `consolidate-session` function.**
+- Model: `claude-sonnet-5`, called with `thinking: { type: "adaptive" }` (the model decides how much to reason; thinking tokens are billed as output tokens, at Sonnet's output rate — this is materially more expensive per call than Tier 1's plain Haiku call, both in $/token and typically in token count).
+- Trigger — **this runs far more often than "once at the end":**
+  - **Periodically during a live session:** every 5 utterances successfully processed by Tier 1 (`sinceConsolidateRef.current >= 5` in `Board.jsx`), fire-and-forget, not awaited by the UI. A single 10-minute talking session with ~40-60 utterances triggers this **6-12 times before it even ends.**
+  - **Once more at session end** ("linking" phase, `needsLinking` in `Board.jsx`'s wrap-up effect) — this is the specific call users see as "Linking ideas…".
+- Payload per call: **the entire node graph for the session, resent from scratch every time** — every node (up to 200, id/type/title/summary truncated to 200 chars) plus every existing edge among them (up to 500) — not windowed, not delta'd, not cached.
+- **The system prompt here is passed as a plain string (`system: opts.system` in `reasonForJson`, `base44/shared/claude.ts`), not wrapped with `cache_control` the way Tier 1's is.** So unlike Tier 1, Tier 2's ~500-word system prompt is billed in full on every single call too — there is currently zero caching benefit on this call site at all.
+- Result: `merge_nodes` / `create_edge` ops, same ops-log delivery as Tier 1.
+
+### What's NOT currently tracked
+Anthropic's `usage` object (input/output/cache tokens) is returned by both `classifyWithTool` and `reasonForJson` but **discarded by every caller** — never logged, never persisted anywhere. There is currently no way to see actual token/cost breakdown per call site from this app's own data; the $0.0667/min figure came from the Anthropic Console, not from anything Tackly logs. Any optimization work should probably start by actually recording `usage` per call (e.g. onto `SessionOp.payload` or a lightweight new field) so future changes can be measured, not just guessed at.
+
+### Findings — where the cost actually goes
+1. **Tier 2 firing every 5 utterances live, not just once at the end, is almost certainly the dominant cost.** It's Sonnet (pricier per token than Haiku) with adaptive thinking (thinking tokens bill as output, typically the priciest tokens), on an uncached system prompt, resending the full node+edge graph — and it does all of that repeatedly throughout a single live session, not once.
+2. **Tier 2's system prompt isn't cached at all** (missing `cache_control`, unlike Tier 1) — a straightforward fix with no behavior change, since the prompt text itself doesn't need to change to get the caching benefit.
+3. **Tier 1's `openList` (all visible nodes, every utterance) is uncapped and uncached**, so cost-per-utterance creeps up over the course of a long session even though each individual call is cheap. Not the dominant driver, but compounds on long sessions. **Not yet changed** — capping this window would trade off Tier-1's ability to match a callback to something said far earlier in a long session, so it needs the same kind of explicit call as the Tier-2 changes below rather than being decided silently. Flagged here as the next candidate, not yet acted on.
+4. **No token/cost visibility** — the app can't currently answer "how much did this session cost" from its own data, only from the Anthropic Console in aggregate. **Not yet built** — `usage` (input/output/cache tokens) is still discarded by both `classifyWithTool` and `reasonForJson` callers. Worth adding before/while judging whether the changes below actually worked, rather than relying on the Anthropic Console's aggregate $/day.
+5. **The end-of-session Tier 2 pass duplicates most of what the periodic live passes already did** — since Tier 2 already ran repeatedly throughout the live session, the final "Linking ideas…" pass is mostly re-processing a graph that's already been mostly merged/linked, for a comparatively small amount of new material. Left as-is (still runs once at session end) — only the live frequency and model changed, see below.
+
+### Changes applied (2026-07-24, based on user decisions)
+Two decisions were confirmed and applied:
+- **Live Tier-2 frequency: every 5 utterances → every 20** (`sinceConsolidateRef` check in `Board.jsx`'s `liveProcess`). Cuts live consolidation calls roughly 4x for a typical session; the end-of-session pass is unchanged and still catches anything the wider live interval missed.
+- **Tier 2 model: Sonnet + adaptive thinking → Haiku 4.5, via a forced tool call** (`consolidate-session/entry.ts` — `TIER2_MODEL`, new `TIER2_TOOL`/`record_consolidation` schema, switched from `reasonForJson` to `classifyWithTool`). This was explicitly called out as "try it and see" rather than a confident final answer — merge/cross-link judgment is a harder call than Tier-1's per-utterance classification, so watch real sessions for missed merges or bad edges. **Agreed fallback if Haiku's judgment proves too weak: Sonnet with thinking OFF (not adaptive)** — still drops the thinking-token bill (the biggest single line item) while keeping Sonnet's stronger reasoning; swap `TIER2_MODEL` back and pass `thinking` as omitted/off rather than `{type: "adaptive"}`. Do not silently revert to the original Sonnet+adaptive-thinking setup without a fresh decision — that was the confirmed-expensive configuration this change was meant to replace.
+- Switching to a forced tool call (`classifyWithTool`) also fixes finding #2 above for free — its system prompt is `cache_control`-cached the same way Tier 1's is, unlike the old `reasonForJson` path.
+- **Not changed**: openList capping (#3) and usage/cost logging (#4) remain open, not yet acted on — see findings above.
+
+---
+
 ## 2. Node taxonomy & identification logic
 
 ### Node types (current, post-rename — table below reflects the shipped taxonomy, not the original draft)

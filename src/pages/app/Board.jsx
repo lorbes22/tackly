@@ -363,8 +363,10 @@ export default function Board() {
         .then((res) => {
           sinceConsolidateRef.current += res.data?.processed ?? 0;
           // Periodic live Tier-2 (merges + longer-distance links). Fire-and-
-          // forget so it never blocks live classification.
-          if (sinceConsolidateRef.current >= 5) {
+          // forget so it never blocks live classification. Was every 5
+          // utterances; bumped to 20 (PLAN.md §1d cost audit) — Tier-2 firing
+          // 6-12x per live session was the single largest cost driver found.
+          if (sinceConsolidateRef.current >= 20) {
             sinceConsolidateRef.current = 0;
             base44.functions
               .invoke("consolidate-session", { session_id: sessionId })
