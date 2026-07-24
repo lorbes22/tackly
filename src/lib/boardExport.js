@@ -12,8 +12,9 @@ const TYPE_HEX = {
   risk: "#F7DFDA",
   action: "#F9EDAF",
   waffle: "#E9E7E2",
-  // Legacy aliases for nodes created before the taxonomy rename
-  fact: "#DCEFE3",
+  fact: "#E3EAE0",
+  plan: "#EAD9F0",
+  // Legacy alias for nodes created before the taxonomy rename
   aside: "#E9E7E2",
 };
 const TYPE_LABEL = {
@@ -26,7 +27,8 @@ const TYPE_LABEL = {
   risk: "RISK",
   action: "ACTION",
   waffle: "WAFFLE",
-  fact: "EVIDENCE",
+  fact: "FACT",
+  plan: "PLAN",
   aside: "WAFFLE",
 };
 const INK = "#26241F";

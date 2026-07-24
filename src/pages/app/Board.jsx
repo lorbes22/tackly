@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { Logo } from "@/components/Logo";
 import { NodeCard } from "@/components/NodeCard";
 import { GhostNodeCard } from "@/components/GhostNodeCard";
+import { FloatingTranscript } from "@/components/FloatingTranscript";
 import { EdgeLayer } from "@/components/EdgeLayer";
 import { NodeDetailPanel } from "@/components/NodeDetailPanel";
 import { AddNoteModal } from "@/components/AddNoteModal";
@@ -345,20 +346,31 @@ export default function Board() {
     [sessionId, user]
   );
 
-  // Live capture: fire one classification call per utterance the instant it
-  // finalizes — in PARALLEL, not a serial queue. The backend atomically claims
-  // each utterance, so overlapping calls never double-process or strand rows
-  // (PLAN.md "compute in parallel, commit in order"). Board changes arrive as
-  // ops via realtime; nothing here re-fetches the board.
-  const liveProcess = useCallback(
-    (utteranceId, provisionalNodeId) => {
+  // Live capture: batch finalized utterances into ONE classification call per
+  // short window instead of one call per utterance (PLAN.md §1d) — every call
+  // pays a fixed tool-use/system-prompt overhead regardless of how little it
+  // classifies, so firing one call per utterance was paying that overhead far
+  // more often than necessary. Utterances still queue and flush in PARALLEL
+  // across overlapping windows (never a serial queue waiting on a prior
+  // call's round-trip) — the backend atomically claims each utterance, so
+  // overlapping calls never double-process or strand rows (PLAN.md "compute
+  // in parallel, commit in order"). Board changes arrive as ops via realtime;
+  // nothing here re-fetches the board.
+  const pendingQueueRef = useRef({ ids: [], provisionals: {} });
+  const flushTimerRef = useRef(null);
+  const BATCH_DEBOUNCE_MS = 2500;
+  const BATCH_MAX_SIZE = 4;
+
+  const liveProcessBatch = useCallback(
+    (utteranceIds, provisionals) => {
+      if (!utteranceIds.length) return Promise.resolve();
       inFlightRef.current += 1;
       setPhase("mapping");
-      base44.functions
+      return base44.functions
         .invoke("process-session", {
           session_id: sessionId,
-          utterance_ids: [utteranceId],
-          ...(provisionalNodeId ? { provisional_node_id: provisionalNodeId } : {}),
+          utterance_ids: utteranceIds,
+          ...(Object.keys(provisionals).length ? { provisionals } : {}),
         })
         .then((res) => {
           sinceConsolidateRef.current += res.data?.processed ?? 0;
@@ -379,13 +391,45 @@ export default function Board() {
         .finally(() => {
           inFlightRef.current = Math.max(0, inFlightRef.current - 1);
           if (inFlightRef.current === 0) setPhase(null);
+          const idSet = new Set(utteranceIds);
           setUtterances((prev) =>
-            prev.map((u) => (u.id === utteranceId ? { ...u, processed: true } : u))
+            prev.map((u) => (idSet.has(u.id) ? { ...u, processed: true } : u))
           );
         });
     },
     [sessionId]
   );
+
+  const flushQueue = useCallback(() => {
+    clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = null;
+    const { ids, provisionals } = pendingQueueRef.current;
+    if (!ids.length) return Promise.resolve();
+    pendingQueueRef.current = { ids: [], provisionals: {} };
+    return liveProcessBatch(ids, provisionals);
+  }, [liveProcessBatch]);
+
+  // Queue a finalized utterance for the next batched call instead of firing
+  // immediately — flushes after BATCH_DEBOUNCE_MS of no new utterance, or the
+  // instant the queue hits BATCH_MAX_SIZE, whichever comes first (bounds
+  // worst-case added latency to a few seconds either way).
+  const queueForProcessing = useCallback(
+    (utteranceId, provisionalNodeId) => {
+      pendingQueueRef.current.ids.push(utteranceId);
+      if (provisionalNodeId) {
+        pendingQueueRef.current.provisionals[utteranceId] = provisionalNodeId;
+      }
+      if (pendingQueueRef.current.ids.length >= BATCH_MAX_SIZE) {
+        flushQueue();
+        return;
+      }
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = setTimeout(flushQueue, BATCH_DEBOUNCE_MS);
+    },
+    [flushQueue]
+  );
+
+  useEffect(() => () => clearTimeout(flushTimerRef.current), []);
 
   const isLive = session?.status === "active";
   const isMicLive = isLive && (session?.capture_source === "mic_live" || micContinuing);
@@ -422,8 +466,9 @@ export default function Board() {
       setUtterances((prev) =>
         [...prev, ...fresh].sort((a, b) => (a.start_ms ?? 0) - (b.start_ms ?? 0))
       );
-      // Fire a classification call per fresh utterance, in parallel
-      fresh.forEach((r) => liveProcess(r.id));
+      // Queue each fresh utterance for the next batched classification call
+      // rather than firing one call per utterance (PLAN.md §1d).
+      fresh.forEach((r) => queueForProcessing(r.id));
     };
     const unsub = Utterance.subscribe((event) => {
       if (event.type === "create" && event.data?.session_id === sessionId) {
@@ -442,7 +487,7 @@ export default function Board() {
       clearInterval(poll);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isBotLive, sessionId, liveProcess]);
+  }, [isBotLive, sessionId, queueForProcessing]);
 
   // Bot sessions: also watch the Session record itself. The bot leaving the
   // call (host-leave webhook) or Recall's status webhook flips status to
@@ -552,17 +597,23 @@ export default function Board() {
           processed: false,
         });
         setUtterances((prev) => [...prev, utt]);
-        liveProcess(utt.id, provId);
+        queueForProcessing(utt.id, provId);
       } catch {
         // dropped utterance — the transcript panel simply won't show it
       }
     },
-    [sessionId, user, liveProcess]
+    [sessionId, user, queueForProcessing]
   );
 
   const endLiveSession = useCallback(async () => {
     setEnding(true);
     try {
+      // Flush any batched-but-not-yet-sent utterances BEFORE flipping status.
+      // Without this, a still-queued utterance's provisional node would never
+      // get finalized/hidden by this same call (the wrap-up pass below
+      // doesn't carry provisional ids), leaving a stray forming placeholder
+      // behind alongside the real (freshly created) node.
+      await flushQueue();
       // A mic continuation on an originally bot_live session ends like any
       // other mic session — the bot itself is long gone, nothing to tell it.
       if (session?.capture_source === "bot_live" && !micContinuing) {
@@ -578,7 +629,7 @@ export default function Board() {
     } finally {
       setEnding(false);
     }
-  }, [session, sessionId, refreshSession, micContinuing]);
+  }, [session, sessionId, refreshSession, micContinuing, flushQueue]);
 
   // Re-open a completed meeting for mic capture — same lifecycle a personal
   // session uses (active -> processing -> complete), just re-entered from
@@ -601,15 +652,16 @@ export default function Board() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes]);
 
-  // Live catch-up: fire a parallel call for each unprocessed utterance left
-  // over from a previous visit (each claims its own row, so this is safe).
+  // Live catch-up: queue every unprocessed utterance left over from a
+  // previous visit (each claims its own row, so this is safe) — batched
+  // through the same queue as live capture rather than one call each.
   const caughtUpRef = useRef(false);
   useEffect(() => {
     if (isLive && !caughtUpRef.current) {
       const stale = utterances.filter((u) => !u.processed);
       if (stale.length) {
         caughtUpRef.current = true;
-        stale.forEach((u) => liveProcess(u.id));
+        stale.forEach((u) => queueForProcessing(u.id));
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1036,6 +1088,13 @@ export default function Board() {
                 </p>
               </div>
             </div>
+          )}
+
+          {(isMicLive || isBotLive) && !showTranscript && (
+            <FloatingTranscript
+              utterances={utterances}
+              onExpand={() => setShowTranscript(true)}
+            />
           )}
 
           {/* Zoom controls */}

@@ -13,12 +13,23 @@ export const NODE_TYPE_STYLES = {
   decision: { fill: "bg-note-sky", label: "Decision" },
   risk: { fill: "bg-note-coral", label: "Risk" },
   action: { fill: "bg-note-gold", label: "Action" },
+  // Fact: a standalone verifiable data point with no argumentative role
+  // (background info, a date, a number mentioned in passing) — distinct from
+  // Evidence, which is specifically backing up a claim/decision/risk (always
+  // has a clear parent it supports). "fact" was also this project's original
+  // pre-rename name for what's now Evidence; any very old record still using
+  // it that way just renders as the new Fact style now — a cosmetic-only
+  // overlap on legacy test data, not a live concern.
+  fact: { fill: "bg-note-sage", label: "Fact" },
+  // Plan: a multi-step forward-looking goal/strategy — broader than a single
+  // Action (one task), more concrete than a Topic (which just frames a
+  // subject). Individual actions can attach under a plan.
+  plan: { fill: "bg-note-plum", label: "Plan" },
   // Waffle (small talk with some content) recedes: muted fill + slightly
   // transparent so it doesn't compete with the analytical nodes
   waffle: { fill: "bg-note-gray", label: "🧇 Waffle", muted: true },
-  // Legacy aliases: older sessions stored "fact"/"aside" before the rename —
-  // keep them rendering correctly rather than falling back to Idea's style.
-  fact: { fill: "bg-note-mint", label: "Evidence" },
+  // Legacy alias: older sessions stored "aside" before the rename — keep it
+  // rendering correctly rather than falling back to Idea's style.
   aside: { fill: "bg-note-gray", label: "🧇 Waffle", muted: true },
 };
 

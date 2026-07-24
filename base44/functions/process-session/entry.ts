@@ -67,7 +67,7 @@ function isPureFiller(text: string): boolean {
 // very old, already-resolved, non-topic node can age out of what the model
 // is shown as a possible parent/attach target.
 const OPEN_LIST_RECENCY = 50;
-const NODE_TYPES = ["topic", "idea", "question", "decision", "risk", "action", "evidence", "opinion", "waffle"];
+const NODE_TYPES = ["topic", "idea", "question", "decision", "risk", "action", "plan", "evidence", "fact", "opinion", "waffle"];
 const OPEN_STATUS_TYPES = new Set(["question", "risk", "action"]);
 // leads_to is the general "one thought followed from another" flow — the
 // default connective tissue of a thinking session. supports/contradicts/causes
@@ -82,10 +82,13 @@ const RELATIONS = ["leads_to", "expands", "answers", "supports", "contradicts", 
 // parent, so the map grows without anything jumping around.
 const ROOT_X = 1000;
 const ROOT_Y = 240;
-const STEP_Y = 200; // vertical gap parent -> child row
-const STEP_X = 280; // horizontal gap between siblings/columns
-const CLR_X = 250; // min horizontal clearance between cards
-const CLR_Y = 165; // min vertical clearance between cards
+// Bumped up from 200/280/250/165 — user feedback was that new nodes felt too
+// tightly packed against their neighbors; more breathing room per row/column
+// reads as "a new beat" on the canvas without needing a whole new branch.
+const STEP_Y = 260; // vertical gap parent -> child row
+const STEP_X = 340; // horizontal gap between siblings/columns
+const CLR_X = 300; // min horizontal clearance between cards
+const CLR_Y = 200; // min vertical clearance between cards
 
 type Placed = { id: string; x: number; y: number; parent_id: string | null };
 
@@ -142,7 +145,9 @@ Analytical node types (real substance worth mapping):
 - decision: a commitment being MADE right now — a choice the group or person is settling on going forward ("let's ship Friday", "we'll use Postgres"). If it's reporting that something already happened or already got fixed, it's evidence, not a decision — see the worked example below.
 - risk: a concern, blocker, or potential problem
 - action: a task or follow-up, with an owner if known
-- evidence: a stated, objective, verifiable fact or data point — including a status report of something already done, fixed, working, or resolved ("the login bug is fixed now", "we're getting real-time data now"). These are facts about the current state, not a decision being made in the moment.
+- plan: a multi-step forward-looking goal or strategy — broader than a single action (one task) and more concrete/goal-oriented than a topic (which just frames a subject). Use plan when the speaker lays out a direction with several steps or a target to work toward ("get token cost down to 10 cents per 6 minutes via batching and dedup"), not for a single one-off task (that's action) or a bare subject header (that's topic). Individual actions/ideas that serve the plan attach under it.
+- evidence: a stated, objective, verifiable fact or data point being used to support, refute, or resolve a specific claim/decision/risk/question elsewhere in the map — including a status report of something already done, fixed, working, or resolved ("the login bug is fixed now", "we're getting real-time data now"). These are facts about the current state, not a decision being made in the moment. Evidence always has a clear parent it's backing up — see fact below for a data point that ISN'T backing anything up.
+- fact: a standalone verifiable data point or piece of background info mentioned in passing, with no argumentative role — it isn't supporting, refuting, or resolving anything else in the map, it's just a fact stated for context (a date, a starting number, a name, background info). If the same data point later gets USED to support/refute/resolve something, that later use is evidence (or the fact node's parent connection should reflect it being used that way) — see the worked example below.
 - opinion: a subjective view, preference, judgment, or reaction — distinct from evidence, which is verifiable. "I think X is better" is opinion; "X shipped in March" is evidence.
 
 One non-analytical type:
@@ -155,15 +160,20 @@ For EACH utterance, decide one or more decisions. First choose the bucket for th
 
 CRITICAL — one utterance can and should produce MULTIPLE decisions when it states multiple distinct nameable things. Do not compress several named items into one node or one fat summary. The clearest signal is the speaker explicitly enumerating things: "we have two ideas: A and B", "there are three risks here", "first X, second Y". Each named item is its own node. See the worked example below — this is the single most important behavior to get right.
 
-Then the action for each decision. Default strongly to "new" — a granular map of many connected nodes is the goal, NOT a few nodes with fat summaries:
-- "new" — the DEFAULT. Use it for any thought that can stand on its own card, INCLUDING a sub-point, cause, consequence, specific detail, example, or named item ABOUT an existing node. Give type, a punchy title (max 8 words), a 1-2 sentence summary, confidence 0-1, and connect it to the relevant node as its parent (see CONNECTING). Example: after a "UGC platform risk" node exists, "we won't have many creators at the start, so brands won't join" is its OWN new node (a supporting risk/detail) connected to that risk — do NOT fold it into the risk's summary.
-- "attach" — ONLY a near-verbatim restatement or bare acknowledgement of an existing node that adds no new information at all; give that node_id. Rare.
-- "expand" — ONLY when the utterance completes the SAME unfinished thought that produced an existing node (a sentence that trailed off across a pause and is now finished), and it isn't worth its own card; give node_id + a merged summary. Rare. If the utterance adds a distinct point rather than finishing the same one, use "new" connected instead.
+EQUALLY CRITICAL — the opposite mistake is just as real and just as damaging: don't chain several nodes for what is actually ONE point being restated, corrected, or reacted to across consecutive utterances. Granularity is for genuinely DISTINCT things, not for the same thing said again. Two patterns to watch for:
+- REFINEMENT: a number or fact gets corrected/updated moments after first being stated ("it was $0.40/min... no wait, actually it's $0.06/min now"). This is the SAME fact evolving, not a new fact plus a rebuttal of the old one — use "expand" on the existing node (update its summary to the corrected/latest value) rather than creating a new node "answering" or "contradicting" the first. A fact that gets refined twice should be ONE node with an up-to-date summary, not three stacked nodes each showing an intermediate value.
+- SINGLE RAMBLING REACTION: a multi-clause ramble that's all ONE continuous sentiment, not several distinct points ("it looks great, still fast, structuring things correctly, amazing") — this is ONE opinion node capturing the overall reaction, not a separate node per clause. Only split it into multiple nodes if the clauses are genuinely distinct claims (different subjects, different types), not just the same praise/complaint restated in different words.
+The test for both: would a person mapping this by hand draw a new box, or just update the box they already drew? If nothing NEW is being said — only the same point restated, corrected, or reinforced — don't draw a new box.
+
+Then the action for each decision. Default to "new" for genuinely distinct substance — a granular map of many connected nodes is the goal — but that default stops applying the moment a decision would just restate, correct, or reinforce a node that already exists (see EQUALLY CRITICAL above):
+- "new" — the DEFAULT for a thought that can stand on its own card, INCLUDING a sub-point, cause, consequence, specific detail, example, or named item ABOUT an existing node — as long as it's actually saying something the map doesn't already have. Give type, a punchy title (max 8 words), a 1-2 sentence summary, confidence 0-1, and connect it to the relevant node as its parent (see CONNECTING). Example: after a "UGC platform risk" node exists, "we won't have many creators at the start, so brands won't join" is its OWN new node (a supporting risk/detail) connected to that risk — do NOT fold it into the risk's summary.
+- "attach" — a near-verbatim restatement or bare acknowledgement of an existing node that adds no new information at all; give that node_id.
+- "expand" — the utterance completes the SAME unfinished thought that produced an existing node (a sentence that trailed off across a pause and is now finished), OR it corrects/refines/updates a fact or number an existing node already states, OR it continues the same single reaction/sentiment an existing node already captures — in all these cases nothing NEW is being said, an existing node's summary just needs updating; give node_id + an updated summary. If the utterance adds a genuinely distinct point rather than restating/refining the same one, use "new" connected instead.
 - "skip" — bucket 1 (true filler) only.
 
 Rules:
-- When unsure between "expand" and a "new" connected node, choose "new" connected. More connected nodes beats fatter summaries.
-- When unsure between one node covering several named items and several connected nodes, choose several. More connected nodes beats compressed ones.
+- When unsure whether a thought is genuinely distinct or just restating/refining something already on the map, ask: is this the SAME fact/point evolving, or a NEW fact/point? Same thing evolving → "expand". Genuinely new → "new" connected. Don't default to "new" just because you're unsure — that's exactly the over-fragmentation pattern flagged above.
+- When unsure between one node covering several DISTINCT named items and several connected nodes, choose several. More connected nodes beats compressed ones — but this is about distinct items, not the same item restated (see above).
 - attach/expand node_id must come from the existing nodes list (a node that already existed before this turn).
 - For action nodes, put the owner in the title when stated (e.g. "Maya: draft launch email").
 
@@ -233,6 +243,26 @@ Example: evidence vs. opinion, same topic, back to back.
 Utterance A: "Activation dropped to 34% last month." → evidence (a stated, checkable number — no hedge word, no judgment).
 Utterance B: "I think that's because onboarding is too long." → opinion (a causal claim the speaker believes, not a verified fact — "I think" is the signal, but even without it, an unverified causal claim about WHY something happened is opinion, not evidence).
 Utterance C: "The onboarding flow has 7 screens." → evidence again (a countable, checkable fact, back to objective ground).
+
+Example: fact vs. evidence — a data point on its own vs. one doing work.
+Utterance A: "We're starting this session at 4:40pm, billing balance is $3.33." → TWO fact nodes (or one, if said as a single aside) — these are just background numbers, not backing up any claim yet.
+Utterance B (much later): "So we're at $3.57 now, which means the session cost $0.24." → evidence, parent = whatever question/topic is asking "how much does this cost" — NOW the balance figures are doing argumentative work (computing an answer), so this reads as evidence, not a bare fact.
+The same kind of number can be either type depending on whether it's just stated (fact) or used to support/resolve something (evidence) — judge by role in the conversation, not by the number itself.
+
+Example: REFINEMENT anti-fragmentation — a real over-fragmentation bug found in production testing (Token Test V4 session).
+Existing node: id=e1 evidence "Token cost: $0.40 per minute" (parent = a cost question).
+Utterance: "But now we're at around $0.06 per minute, or about 40 cents for a 6-minute session — actually, we got that down to 20-22 cents with the Haiku fix."
+WRONG (what actually happened, over-fragmented): four separate chained evidence nodes — "$0.40/min" → "$0.06/min" (contradicts) → "~$0.40 for 6min" (expands) → "20-22 cents for 6min" (contradicts) — a wall of near-duplicate boxes for what is really one evolving number.
+Correct: "expand" on e1, updating its summary to the LATEST/most refined figure ("Token cost dropped from $0.40/min to ~$0.06/min after the Haiku fix, ~20-22 cents per 6-minute session"). One node, kept current, not a chain.
+
+Example: single rambling reaction anti-fragmentation — also found in the same production session.
+Utterance: "Other than that, it looks pretty good structure-wise. Everything looks amazing. It's still pretty fast, creating nodes very nicely, structuring it in the right places. Amazing."
+WRONG (what actually happened): three chained opinion nodes ("Structure looks good overall" → "System is still fast" → "Structuring nodes correctly").
+Correct: ONE opinion node, e.g. title="System performing well: fast, accurate placement", summary covering the whole reaction. It's one continuous positive reaction, not three distinct claims.
+
+Example: plan vs. topic vs. action.
+Utterance: "I need to figure out how to make this as cheap as possible — get token cost down to 10 cents per 6 minutes through batching and deduping restated facts."
+Correct: new, type=plan, title="Cut token cost to 10¢/6min via batching + dedup", parent=whatever cost topic/risk prompted it. NOT type=topic (this isn't just framing a subject, it's a concrete forward-looking goal with named steps) and NOT type=action (it's bigger than one task — batching and dedup are two separate actions that could each attach under this plan node later).
 
 Example: decision vs. evidence — a status report is NOT a decision.
 Utterance: "So we've fixed two issues from before — the meeting bot wasn't joining, that's fixed now, and we've also changed the avatar so it shows when it's listening."
@@ -350,11 +380,21 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { session_id, utterance_ids, provisional_node_id } = await req.json();
+    // `provisionals` maps utterance_id -> its own still-forming provisional
+    // node id (mic-live sessions can now batch several finalized utterances
+    // into one call — PLAN.md §1d batching — so more than one may arrive
+    // provisional at once, each needing its OWN node finalized in place, not
+    // just utterance 0). `provisional_node_id` (single) is still accepted for
+    // backward compatibility with any in-flight client during a deploy.
+    const { session_id, utterance_ids, provisional_node_id, provisionals } = await req.json();
     if (!session_id) {
       return Response.json({ error: "session_id is required" }, { status: 400 });
     }
-    let provisionalConsumed = false;
+    const provisionalMap: Record<string, string> = { ...(provisionals || {}) };
+    if (provisional_node_id && Array.isArray(utterance_ids) && utterance_ids[0]) {
+      provisionalMap[utterance_ids[0]] = provisional_node_id;
+    }
+    const consumedUtteranceIds = new Set<string>();
 
     // RLS scopes reads to the caller, so a foreign session comes back not-found
     const session = await base44.entities.Session.get(session_id);
@@ -599,17 +639,20 @@ Deno.serve(async (req) => {
           provisional: false,
           ...placement,
         };
-        // Stage 3: if a provisional node was forming for this utterance, finalize
+        // Stage 3: if a provisional node was forming for THIS utterance, finalize
         // it IN PLACE (same record) instead of creating a new one — position,
         // connections and animations stay stable (PLAN.md provisional nodes).
-        // Only the FIRST new-node decision for utterance 0 claims it; any
-        // additional decisions from a multi-item utterance create fresh nodes.
+        // Only the FIRST new-node decision for a given utterance claims its
+        // provisional node; additional decisions from a multi-item utterance
+        // create fresh nodes. A batched call can carry several utterances,
+        // each with its OWN provisional node (see provisionalMap above).
+        const uttProvisionalId = provisionalMap[utt.id];
         let node;
-        if (provisional_node_id && origIdx === 0 && !provisionalConsumed) {
-          provisionalConsumed = true;
-          await base44.entities.Node.update(provisional_node_id, fields);
-          node = { id: provisional_node_id, session_id, owner_user_id: user.id, ...fields };
-          await appendOp("update_node", { node_id: provisional_node_id, patch: fields, node }, baseMs);
+        if (uttProvisionalId && !consumedUtteranceIds.has(utt.id)) {
+          consumedUtteranceIds.add(utt.id);
+          await base44.entities.Node.update(uttProvisionalId, fields);
+          node = { id: uttProvisionalId, session_id, owner_user_id: user.id, ...fields };
+          await appendOp("update_node", { node_id: uttProvisionalId, patch: fields, node }, baseMs);
         } else {
           node = await base44.entities.Node.create({
             owner_user_id: user.id,
@@ -667,12 +710,17 @@ Deno.serve(async (req) => {
       }
     }
 
-    // False start: a provisional node was forming but the final pass decided
-    // this utterance was filler or folded into an existing node — remove it so
-    // the board doesn't keep a stray placeholder.
-    if (provisional_node_id && !provisionalConsumed) {
-      await base44.entities.Node.update(provisional_node_id, { hidden: true }).catch(() => {});
-      await appendOp("hide_node", { node_id: provisional_node_id }, batch[0]?.start_ms ?? Date.now());
+    // False start: a provisional node was forming but its utterance turned out
+    // to be filler or got folded into an existing node (whether the model said
+    // so, or the pre-filter above never sent it to the model at all) — remove
+    // it so the board doesn't keep a stray placeholder. Loops over every
+    // provisional in this batch, not just one, now that a batch can cover
+    // several utterances each with their own forming node.
+    for (const [uttId, provId] of Object.entries(provisionalMap)) {
+      if (consumedUtteranceIds.has(uttId)) continue;
+      await base44.entities.Node.update(provId, { hidden: true }).catch(() => {});
+      const srcUtt = batch.find((u) => u.id === uttId);
+      await appendOp("hide_node", { node_id: provId }, srcUtt?.start_ms ?? batch[0]?.start_ms ?? Date.now());
     }
 
     // Utterances were already claimed (processed=true) up front; here we just

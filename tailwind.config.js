@@ -43,6 +43,8 @@ export default {
           gold: { DEFAULT: '#F9EDAF', edge: '#DDC65A' }, // action
           gray: { DEFAULT: '#E9E7E2', edge: '#C3BFB6' }, // waffle — muted, recedes
           teal: { DEFAULT: '#D6EEEB', edge: '#8FC9C2' }, // topic
+          sage: { DEFAULT: '#E3EAE0', edge: '#A9BFA0' }, // fact — neutral background info, distinct from evidence's mint
+          plum: { DEFAULT: '#EAD9F0', edge: '#C48FD9' }, // plan
         },
         // shadcn/ui semantic mapping (CSS vars set in index.css)
         background: 'hsl(var(--background))',
@@ -110,6 +112,13 @@ export default {
           '0%, 100%': { opacity: '0.72' },
           '50%': { opacity: '1' },
         },
+        // "Tackling…" ghost card — a diagonal light sweep, like a skeleton
+        // loader, so it reads as "something's actively being built" rather
+        // than just a static pulsing box.
+        shimmer: {
+          '0%': { backgroundPosition: '150% 0' },
+          '100%': { backgroundPosition: '-50% 0' },
+        },
       },
       animation: {
         'pop-in': 'pop-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both',
@@ -117,6 +126,7 @@ export default {
         'float-away': 'float-away 620ms ease-in forwards',
         'eq-bar': 'eq-bar 900ms ease-in-out infinite',
         forming: 'forming 1.4s ease-in-out infinite',
+        shimmer: 'shimmer 1.8s linear infinite',
       },
     },
   },
