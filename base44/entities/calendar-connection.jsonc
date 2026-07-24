@@ -1,0 +1,29 @@
+{
+  "name": "CalendarConnection",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": ["google"],
+      "default": "google",
+      "description": "Calendar provider — only Google is wired up for now, Microsoft may follow later"
+    },
+    "connected_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the OAuth connection first completed"
+    },
+    "auto_join": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether Recall should automatically send a bot to every meeting on this calendar (Recall's override_should_record preference), vs. manual link-invite only"
+    }
+  },
+  "required": ["provider"],
+  "rls": {
+    "create": true,
+    "read": { "created_by": "{{user.email}}" },
+    "update": { "created_by": "{{user.email}}" },
+    "delete": { "created_by": "{{user.email}}" }
+  }
+}

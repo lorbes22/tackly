@@ -6,6 +6,7 @@ import { HeroNodePopups } from "@/components/landing/HeroNodePopups";
 import { ScrollRevealText } from "@/components/landing/ScrollRevealText";
 import { Faq } from "@/components/landing/Faq";
 import { SiteFooter } from "@/components/landing/SiteFooter";
+import { PlatformIconRow } from "@/components/PlatformIcons";
 import { ArrowRight, FileUp, Mic, Users } from "lucide-react";
 
 const HOW_IT_WORKS = [
@@ -18,6 +19,7 @@ const HOW_IT_WORKS = [
     icon: Users,
     title: "Join a meeting",
     body: "Tackly's bot joins your call, listens in real time, and builds the board while everyone's still talking.",
+    platforms: true,
   },
   {
     icon: FileUp,
@@ -117,7 +119,7 @@ export default function Landing() {
 
         <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:pb-24">
           <div className="grid gap-5 sm:grid-cols-3">
-            {HOW_IT_WORKS.map(({ icon: Icon, title, body }) => (
+            {HOW_IT_WORKS.map(({ icon: Icon, title, body, platforms }) => (
               <div
                 key={title}
                 className="rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm transition-transform hover:-translate-y-1"
@@ -127,6 +129,7 @@ export default function Landing() {
                 </div>
                 <p className="mt-4 font-display text-lg font-bold text-ink">{title}</p>
                 <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">{body}</p>
+                {platforms && <PlatformIconRow className="mt-3" />}
               </div>
             ))}
           </div>

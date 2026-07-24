@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { Bot, Mic, FileText, Trash2, User } from "lucide-react";
 import { UsageBadge } from "@/components/UsageBadge";
+import { PlatformIconPills } from "@/components/PlatformIcons";
 
 const Session = base44.entities.Session;
 const Node = base44.entities.Node;
@@ -101,14 +102,17 @@ function SessionCard({ session, confirming, deleting, onAskDelete, onCancelDelet
   );
 }
 
-function EntryCard({ to, icon: Icon, noteColor, title, body }) {
+function EntryCard({ to, icon: Icon, noteColor, title, body, platforms }) {
   return (
     <Link
       to={to}
       className={`group relative block rounded-note p-6 shadow-note transition-all hover:-translate-y-0.5 hover:shadow-note-lg ${noteColor}`}
     >
       <Icon className="h-6 w-6 text-ink/70" />
-      <h3 className="mt-3 font-display text-lg font-bold text-ink">{title}</h3>
+      <div className="mt-3 flex items-center gap-2">
+        <h3 className="font-display text-lg font-bold text-ink">{title}</h3>
+        {platforms && <PlatformIconPills />}
+      </div>
       <p className="mt-1 text-sm text-ink/70">{body}</p>
     </Link>
   );
@@ -216,6 +220,7 @@ export default function Home() {
           noteColor="bg-note-sky rotate-1"
           title="Invite the bot"
           body="Paste a meeting link — the bot joins and maps the call live."
+          platforms
         />
         <EntryCard
           to="/app/new?mode=import"
