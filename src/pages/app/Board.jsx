@@ -7,6 +7,7 @@ import { NodeCard } from "@/components/NodeCard";
 import { GhostNodeCard } from "@/components/GhostNodeCard";
 import { EdgeLayer } from "@/components/EdgeLayer";
 import { NodeDetailPanel } from "@/components/NodeDetailPanel";
+import { AddNoteModal } from "@/components/AddNoteModal";
 import { MicBar, BotBar, LiveUtteranceFeed } from "@/components/LiveBars";
 import { RatingModal } from "@/components/RatingModal";
 import { usePanZoom } from "@/lib/usePanZoom";
@@ -57,7 +58,7 @@ export default function Board() {
   const [phase, setPhase] = useState(null); // null | "mapping" | "linking"
   const [notFound, setNotFound] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [focusNotes, setFocusNotes] = useState(false);
+  const [noteModalNodeId, setNoteModalNodeId] = useState(null);
   const [showRating, setShowRating] = useState(false);
   // Nodes/edges present at first load render statically; later ones animate
   const initialNodeIds = useRef(null);
@@ -980,11 +981,7 @@ export default function Board() {
                     forming={!!node.provisional && !settledIds.has(node.id)}
                     animate={initialNodeIds.current && !initialNodeIds.current.has(node.id)}
                     className={selectedId === node.id ? "shadow-brutal-lg ring-2 ring-periwinkle" : ""}
-                    onNotesClick={(id) => {
-                      setShowTranscript(false);
-                      setFocusNotes(true);
-                      setSelectedId(id);
-                    }}
+                    onNotesClick={(id) => setNoteModalNodeId(id)}
                     onClick={() => {
                       // Suppress the click that follows a drag
                       if (draggedRef.current) {
@@ -992,7 +989,6 @@ export default function Board() {
                         return;
                       }
                       setShowTranscript(false);
-                      setFocusNotes(false);
                       setSelectedId((cur) => (cur === node.id ? null : node.id));
                     }}
                   />
@@ -1072,6 +1068,13 @@ export default function Board() {
         {showRating && (
           <RatingModal counts={ratingCounts} onSubmit={submitRating} onDismiss={dismissRating} />
         )}
+        {noteModalNodeId && nodes.some((n) => n.id === noteModalNodeId) && (
+          <AddNoteModal
+            node={nodes.find((n) => n.id === noteModalNodeId)}
+            onAddNote={addNote}
+            onClose={() => setNoteModalNodeId(null)}
+          />
+        )}
 
         {/* Right panel: node detail wins over transcript */}
         <aside
@@ -1087,11 +1090,7 @@ export default function Board() {
               edges={edges}
               utterances={utterances}
               noteCount={noteCounts[selectedNode.id] || 0}
-              focusNotes={focusNotes}
-              onClose={() => {
-                setSelectedId(null);
-                setFocusNotes(false);
-              }}
+              onClose={() => setSelectedId(null)}
               onSelectNode={selectNode}
               onStatusChange={applyStatus}
               onAddNote={addNote}

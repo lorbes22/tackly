@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { NODE_TYPE_STYLES } from "@/components/NodeCard";
 import { ArrowRight, Check, Plus, RotateCcw, Trash2, X } from "lucide-react";
@@ -35,7 +35,6 @@ export function NodeDetailPanel({
   edges,
   utterances,
   noteCount = 0,
-  focusNotes = false,
   onClose,
   onSelectNode,
   onStatusChange,
@@ -46,20 +45,6 @@ export function NodeDetailPanel({
   const [notes, setNotes] = useState(null);
   const [draftNote, setDraftNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
-  const notesRef = useRef(null);
-  const noteInputRef = useRef(null);
-
-  // When opened straight from the card's notes badge, jump to the notes
-  // section and focus the add-note input rather than making the user scroll.
-  useEffect(() => {
-    if (focusNotes) {
-      const t = setTimeout(() => {
-        notesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-        noteInputRef.current?.focus({ preventScroll: true });
-      }, 60);
-      return () => clearTimeout(t);
-    }
-  }, [focusNotes, node.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,7 +194,7 @@ export function NodeDetailPanel({
           </section>
         )}
 
-        <section ref={notesRef} className="mt-5 scroll-mt-2">
+        <section className="mt-5 scroll-mt-2">
           <h3 className="text-xs font-bold uppercase tracking-wider text-ink-soft">
             Notes
           </h3>
@@ -233,7 +218,6 @@ export function NodeDetailPanel({
           )}
           <form onSubmit={submitNote} className="mt-2 flex gap-2">
             <input
-              ref={noteInputRef}
               type="text"
               value={draftNote}
               onChange={(e) => setDraftNote(e.target.value)}
