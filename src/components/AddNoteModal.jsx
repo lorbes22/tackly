@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { NODE_TYPE_STYLES } from "@/components/NodeCard";
+import { NoteItem } from "@/components/NoteItem";
 import { Plus, X } from "lucide-react";
 
 const NodeNote = base44.entities.NodeNote;
@@ -9,7 +10,7 @@ const NodeNote = base44.entities.NodeNote;
 // dedicated modal rather than reusing the side panel's scroll-to-notes flow,
 // which was triggering the browser to scroll the whole document (not just
 // the panel) and leave a large empty margin at the bottom of the page.
-export function AddNoteModal({ node, onAddNote, onClose }) {
+export function AddNoteModal({ node, onAddNote, onDeleteNote, onClose }) {
   const [notes, setNotes] = useState(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -75,12 +76,17 @@ export function AddNoteModal({ node, onAddNote, onClose }) {
           notes.length > 0 && (
             <div className="mt-4 max-h-40 space-y-2 overflow-y-auto">
               {notes.map((n) => (
-                <div
+                <NoteItem
                   key={n.id}
-                  className="rounded-lg border-2 border-ink bg-note-gold/60 px-3 py-2 text-sm text-ink shadow-brutal-sm"
-                >
-                  {n.text}
-                </div>
+                  note={n}
+                  onUpdated={(updated) =>
+                    setNotes((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+                  }
+                  onDelete={async (noteId) => {
+                    await onDeleteNote(node.id, noteId);
+                    setNotes((prev) => prev.filter((p) => p.id !== noteId));
+                  }}
+                />
               ))}
             </div>
           )

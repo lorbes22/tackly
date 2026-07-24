@@ -42,6 +42,11 @@ export async function getEffectivePlan(
 // Sum this user's own billed_ms across sessions started in the current
 // calendar month. Runs with the caller's own client — RLS already scopes
 // Session reads to the owner, so no explicit owner filter is needed.
+// Sessions still "active" haven't had billed_ms finalized yet (that only
+// happens once, at completion — see process-session's finalizeBilledMs), so
+// without this they'd count as zero usage for as long as they stay open,
+// letting a never-ended session dodge quota entirely. Their live span is
+// computed the same way (computeBilledMs over their utterances) instead.
 export async function getUsedMsThisMonth(
   base44: Base44Client,
 ): Promise<number> {
@@ -52,15 +57,40 @@ export async function getUsedMsThisMonth(
     "-started_at",
     500,
   );
-  return sessions
-    .filter((s: { started_at?: string }) => {
-      if (!s.started_at) return false;
-      return new Date(s.started_at) >= periodStart;
-    })
-    .reduce(
-      (sum: number, s: { billed_ms?: number }) => sum + (s.billed_ms || 0),
-      0,
-    );
+  const thisMonth = sessions.filter((s: { started_at?: string }) => {
+    if (!s.started_at) return false;
+    return new Date(s.started_at) >= periodStart;
+  });
+
+  // billed_ms is only finalized at the "processing" → "complete" transition
+  // (see process-session's finalizeBilledMs) — "active" and "processing"
+  // sessions both need their span computed live instead.
+  const finished = thisMonth.filter(
+    (s: { status?: string }) => s.status === "complete",
+  );
+  const active = thisMonth.filter(
+    (s: { status?: string }) => s.status !== "complete",
+  );
+
+  const finishedMs = finished.reduce(
+    (sum: number, s: { billed_ms?: number }) => sum + (s.billed_ms || 0),
+    0,
+  );
+
+  const activeMs = (
+    await Promise.all(
+      active.map(async (s: { id: string }) => {
+        const utterances = await base44.entities.Utterance.filter(
+          { session_id: s.id },
+          "start_ms",
+          5000,
+        );
+        return computeBilledMs(utterances);
+      }),
+    )
+  ).reduce((sum: number, ms: number) => sum + ms, 0);
+
+  return finishedMs + activeMs;
 }
 
 export type QuotaCheck = {

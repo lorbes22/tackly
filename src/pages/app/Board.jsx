@@ -233,6 +233,14 @@ export default function Board() {
         });
         break;
       }
+      case "delete_note": {
+        if (!payload.node_id) return;
+        setNoteCounts((prev) => ({
+          ...prev,
+          [payload.node_id]: Math.max(0, (prev[payload.node_id] || 1) - 1),
+        }));
+        break;
+      }
       case "hide_node": {
         if (!payload.node_id) return;
         setSelectedId((sel) => (sel === payload.node_id ? null : sel));
@@ -653,12 +661,14 @@ export default function Board() {
     };
   }, [session, sessionId, refreshSession]);
 
-  // Post-meeting rating prompt — once per session, only for bot (meeting)
-  // capture, only after it's actually finished processing and not already
-  // rated. sessionStorage remembers a dismiss so reopening the board later
-  // doesn't nag again; an actual rating is permanent on the Session record.
+  // Post-session rating prompt — once per session, for live capture (bot
+  // meetings or solo talk — not pasted imports, which don't really "end"),
+  // only after it's actually finished processing and not already rated.
+  // sessionStorage remembers a dismiss so reopening the board later doesn't
+  // nag again; an actual rating is permanent on the Session record.
   useEffect(() => {
-    if (!session || session.capture_source !== "bot_live") return;
+    if (!session) return;
+    if (session.capture_source !== "bot_live" && session.capture_source !== "mic_live") return;
     if (session.status !== "complete" || session.rating != null) return;
     const dismissKey = `tackly:rating-dismissed:${sessionId}`;
     if (sessionStorage.getItem(dismissKey)) return;
@@ -676,9 +686,9 @@ export default function Board() {
   }, [nodes]);
 
   const submitRating = useCallback(
-    async (rating) => {
+    async (rating, feedback) => {
       try {
-        await Session.update(sessionId, { rating });
+        await Session.update(sessionId, { rating, rating_feedback: feedback || undefined });
       } catch {
         // rating is a nice-to-have, never block the board on it
       }
@@ -777,6 +787,18 @@ export default function Board() {
       return note;
     },
     [sessionId, user, appendUserOp]
+  );
+
+  const deleteNote = useCallback(
+    async (nodeId, noteId) => {
+      setNoteCounts((prev) => ({
+        ...prev,
+        [nodeId]: Math.max(0, (prev[nodeId] || 1) - 1),
+      }));
+      await NodeNote.delete(noteId);
+      appendUserOp("delete_note", { node_id: nodeId, note_id: noteId });
+    },
+    [appendUserOp]
   );
 
   // Soft delete: hide from the board only. The node record and its utterance
@@ -1066,12 +1088,18 @@ export default function Board() {
           </button>
         )}
         {showRating && (
-          <RatingModal counts={ratingCounts} onSubmit={submitRating} onDismiss={dismissRating} />
+          <RatingModal
+            counts={ratingCounts}
+            meeting={session?.capture_source === "bot_live"}
+            onSubmit={submitRating}
+            onDismiss={dismissRating}
+          />
         )}
         {noteModalNodeId && nodes.some((n) => n.id === noteModalNodeId) && (
           <AddNoteModal
             node={nodes.find((n) => n.id === noteModalNodeId)}
             onAddNote={addNote}
+            onDeleteNote={deleteNote}
             onClose={() => setNoteModalNodeId(null)}
           />
         )}
@@ -1094,6 +1122,7 @@ export default function Board() {
               onSelectNode={selectNode}
               onStatusChange={applyStatus}
               onAddNote={addNote}
+              onDeleteNote={deleteNote}
               onHideNode={hideNode}
             />
           ) : (

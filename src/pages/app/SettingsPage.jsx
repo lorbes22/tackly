@@ -1,52 +1,34 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { UsageBadge } from "@/components/UsageBadge";
-import { Calendar, Check } from "lucide-react";
+import { Calendar, PartyPopper } from "lucide-react";
 
-// Plan cards + Stripe Checkout/Billing Portal handoff. Plans themselves
-// (name, price, minute_limit, stripe_price_id) live in the Plan entity —
-// this just lists whatever an admin has configured there. A plan with no
-// stripe_price_id yet renders without an Upgrade button rather than
-// erroring, since create-checkout-session would reject it anyway.
+// Just this account's plan: usage, manage-billing, and a link out to the
+// full plan comparison (public /plans page) rather than repeating the whole
+// grid here — Settings is "your account", not a pricing page.
 function PlansSection() {
   const { user, refresh } = useAuth();
-  const [plans, setPlans] = useState(null);
-  const [busyId, setBusyId] = useState(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
   const checkoutStatus = searchParams.get("checkout");
 
   useEffect(() => {
-    base44.entities.Plan.list("price_monthly").then(setPlans).catch(() => setPlans([]));
-  }, []);
-
-  useEffect(() => {
     if (!checkoutStatus) return;
-    const next = new URLSearchParams(searchParams);
-    next.delete("checkout");
-    setSearchParams(next, { replace: true });
     if (checkoutStatus === "success") refresh();
   }, [checkoutStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const upgrade = async (planId) => {
-    setError("");
-    setBusyId(planId);
-    try {
-      const res = await base44.functions.invoke("create-checkout-session", { plan_id: planId });
-      if (res.data?.url) window.location.href = res.data.url;
-      else setError(res.data?.error || "Couldn't start checkout.");
-    } catch {
-      setError("Couldn't start checkout.");
-    } finally {
-      setBusyId(null);
-    }
+  const dismissCheckoutStatus = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("checkout");
+    setSearchParams(next, { replace: true });
   };
 
   const manageBilling = async () => {
     setError("");
-    setBusyId("portal");
+    setBusy(true);
     try {
       const res = await base44.functions.invoke("create-billing-portal-session", {});
       if (res.data?.url) window.location.href = res.data.url;
@@ -54,72 +36,75 @@ function PlansSection() {
     } catch {
       setError("Couldn't open billing portal.");
     } finally {
-      setBusyId(null);
+      setBusy(false);
     }
   };
 
-  if (!plans || plans.length === 0) return null;
-
   return (
-    <div className="mt-5">
-      {checkoutStatus === "success" && (
-        <p className="mb-3 rounded-xl border border-line bg-note-mint/40 px-3.5 py-2 text-sm text-ink">
-          Subscription updated — thanks!
-        </p>
-      )}
-      {checkoutStatus === "cancel" && (
-        <p className="mb-3 rounded-xl border border-line bg-paper-sunken px-3.5 py-2 text-sm text-ink-soft">
-          Checkout canceled — no changes made.
-        </p>
-      )}
-      {error && (
-        <p className="mb-3 rounded-xl border border-note-coral-edge/40 bg-note-coral/30 px-3.5 py-2 text-sm text-ink">
-          {error}
-        </p>
-      )}
-      <div className="grid gap-3 sm:grid-cols-3">
-        {plans.map((plan) => {
-          const isCurrent = (user?.plan_id || "") === plan.id;
-          return (
+    <>
+      <div className="mt-5">
+        {error && (
+          <p className="mb-3 rounded-xl border border-note-coral-edge/40 bg-note-coral/30 px-3.5 py-2 text-sm text-ink">
+            {error}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {user?.stripe_customer_id && (
+            <button
+              onClick={manageBilling}
+              disabled={busy}
+              className="h-9 rounded-lg border border-line px-3.5 text-sm font-medium text-ink transition-colors hover:bg-paper-sunken disabled:opacity-60"
+            >
+              {busy ? "Opening…" : "Manage billing"}
+            </button>
+          )}
+          <Link
+            to="/plans"
+            className="h-9 rounded-lg px-3.5 text-sm font-medium text-periwinkle-deep transition-colors hover:bg-periwinkle-tint"
+          >
+            View all plans →
+          </Link>
+        </div>
+      </div>
+
+      {(checkoutStatus === "success" || checkoutStatus === "cancel") && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4"
+          onClick={dismissCheckoutStatus}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border-2 border-ink bg-paper-raised p-6 text-center shadow-brutal animate-fade-up"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div
-              key={plan.id}
-              className={`rounded-xl border p-4 ${
-                isCurrent ? "border-periwinkle bg-periwinkle-tint" : "border-line bg-paper-raised"
+              className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full ${
+                checkoutStatus === "success" ? "bg-note-mint" : "bg-paper-sunken"
               }`}
             >
-              <p className="font-display text-sm font-bold text-ink">{plan.name}</p>
-              <p className="mt-0.5 text-xs text-ink-soft">
-                {plan.price_monthly > 0 ? `£${plan.price_monthly}/mo` : "Free"}
-              </p>
-              {isCurrent ? (
-                <p className="mt-3 flex items-center gap-1 text-xs font-medium text-periwinkle-deep">
-                  <Check className="h-3.5 w-3.5" /> Current plan
-                </p>
-              ) : plan.stripe_price_id ? (
-                <button
-                  onClick={() => upgrade(plan.id)}
-                  disabled={busyId === plan.id}
-                  className="mt-3 h-8 w-full rounded-lg bg-periwinkle text-xs font-semibold text-white transition-colors hover:bg-periwinkle-deep disabled:opacity-60"
-                >
-                  {busyId === plan.id ? "Redirecting…" : "Upgrade"}
-                </button>
-              ) : (
-                <p className="mt-3 text-xs text-ink-faint">Not available yet</p>
-              )}
+              <PartyPopper
+                className={`h-6 w-6 ${
+                  checkoutStatus === "success" ? "text-ink" : "text-ink-faint"
+                }`}
+              />
             </div>
-          );
-        })}
-      </div>
-      {user?.stripe_customer_id && (
-        <button
-          onClick={manageBilling}
-          disabled={busyId === "portal"}
-          className="mt-3 text-sm font-medium text-ink-soft underline hover:text-ink disabled:opacity-60"
-        >
-          {busyId === "portal" ? "Opening…" : "Manage billing"}
-        </button>
+            <p className="mt-4 font-display text-lg font-bold text-ink">
+              {checkoutStatus === "success" ? "You're upgraded!" : "No hard feelings"}
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              {checkoutStatus === "success"
+                ? "Your plan just leveled up — go ramble accordingly."
+                : "Checkout canceled, nothing changed. Your plan's exactly where you left it."}
+            </p>
+            <button
+              onClick={dismissCheckoutStatus}
+              className="mt-5 h-10 w-full rounded-xl border-2 border-ink bg-periwinkle font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+            >
+              {checkoutStatus === "success" ? "Let's go" : "Got it"}
+            </button>
+          </div>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 

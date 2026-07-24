@@ -4,17 +4,24 @@ import { base44 } from "@/api/base44Client";
 // Reads the same quota check the session-creation flow already gates on
 // (check-quota), just to display it rather than enforce it — so the number
 // shown here can never drift from what actually blocks a new session.
+// check-quota itself now counts an in-progress session's live utterance span
+// (not just billed_ms, which is only finalized when a session completes), so
+// polling here is what makes that visible without a manual page reload.
 export function useQuota() {
   const [quota, setQuota] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    base44.functions
-      .invoke("check-quota", { session_type: "personal" })
-      .then((res) => !cancelled && setQuota(res.data))
-      .catch(() => {});
+    const load = () =>
+      base44.functions
+        .invoke("check-quota", { session_type: "personal" })
+        .then((res) => !cancelled && setQuota(res.data))
+        .catch(() => {});
+    load();
+    const interval = setInterval(load, 20000);
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, []);
 

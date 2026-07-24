@@ -7,6 +7,7 @@ import { ScrollRevealText } from "@/components/landing/ScrollRevealText";
 import { Faq } from "@/components/landing/Faq";
 import { SiteFooter } from "@/components/landing/SiteFooter";
 import { PlatformIconRow } from "@/components/PlatformIcons";
+import { PlanCards } from "@/components/PlanCards";
 import { ArrowRight, FileUp, Mic, Users } from "lucide-react";
 
 const HOW_IT_WORKS = [
@@ -138,6 +139,18 @@ export default function Landing() {
         </section>
 
         <ScrollRevealText text={ABOUT_TEXT} />
+
+        <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:pb-24">
+          <div className="mx-auto max-w-xl text-center">
+            <h2 className="font-display text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+              Plans &amp; pricing
+            </h2>
+            <p className="mt-3 text-ink-soft">
+              Free to start — 30 minutes of rambling a month, meetings included.
+            </p>
+          </div>
+          <PlanCards className="mx-auto mt-8 max-w-4xl" />
+        </section>
 
         <Faq />
 

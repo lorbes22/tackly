@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { NODE_TYPE_STYLES } from "@/components/NodeCard";
+import { NoteItem } from "@/components/NoteItem";
 import { ArrowRight, Check, Plus, RotateCcw, Trash2, X } from "lucide-react";
 
 const RELATION_LABELS = {
@@ -39,6 +40,7 @@ export function NodeDetailPanel({
   onSelectNode,
   onStatusChange,
   onAddNote,
+  onDeleteNote,
   onHideNode,
 }) {
   const [linkedUtteranceIds, setLinkedUtteranceIds] = useState(null);
@@ -206,12 +208,17 @@ export function NodeDetailPanel({
             notes.length > 0 && (
               <div className="mt-2 space-y-2">
                 {notes.map((n) => (
-                  <div
+                  <NoteItem
                     key={n.id}
-                    className="rounded-lg border-2 border-ink bg-note-gold/60 px-3 py-2 text-sm text-ink shadow-brutal-sm"
-                  >
-                    {n.text}
-                  </div>
+                    note={n}
+                    onUpdated={(updated) =>
+                      setNotes((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+                    }
+                    onDelete={async (noteId) => {
+                      await onDeleteNote(node.id, noteId);
+                      setNotes((prev) => prev.filter((p) => p.id !== noteId));
+                    }}
+                  />
                 ))}
               </div>
             )

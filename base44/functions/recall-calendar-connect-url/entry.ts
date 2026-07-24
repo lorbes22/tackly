@@ -19,10 +19,12 @@ Deno.serve(async (req) => {
     if (!apiKey) {
       return Response.json({ error: "RECALL_API_KEY is not configured" }, { status: 500 });
     }
-    const clientId = Deno.env.get("GOOGLE_CALENDAR_CLIENT_ID");
+    // Secret is actually stored as GOOGLE_CALENDER_CLIENT_ID (typo, missing
+    // the "A") — matching that name here rather than renaming the secret.
+    const clientId = Deno.env.get("GOOGLE_CALENDER_CLIENT_ID");
     if (!clientId) {
       return Response.json(
-        { error: "GOOGLE_CALENDAR_CLIENT_ID is not configured" },
+        { error: "GOOGLE_CALENDER_CLIENT_ID is not configured" },
         { status: 500 },
       );
     }

@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Star, X } from "lucide-react";
 
-// Quirky post-meeting rating prompt. Shown once, right after a meeting
-// session finishes processing, summarizing what got mapped so the ask
-// for a rating comes with a reason to feel good about it.
-export function RatingModal({ counts, onSubmit, onDismiss }) {
+// Quirky post-session rating prompt. Shown once, right after a session
+// finishes processing (meeting or solo), summarizing what got mapped so the
+// ask for a rating comes with a reason to feel good about it. Stars pick a
+// rating immediately; an optional feedback field reveals once one's picked,
+// so leaving feedback is never required to submit.
+export function RatingModal({ counts, meeting = false, onSubmit, onDismiss }) {
   const [hovered, setHovered] = useState(0);
   const [rating, setRating] = useState(0);
+  const [feedback, setFeedback] = useState("");
   const [sent, setSent] = useState(false);
 
   const parts = [];
@@ -21,15 +24,14 @@ export function RatingModal({ counts, onSubmit, onDismiss }) {
         }${parts[parts.length - 1]} while you talked — ready whenever you need it.`
       : "We mapped out everything that was said while you talked — ready whenever you need it.";
 
-  const handlePick = (n) => {
-    setRating(n);
+  const submit = () => {
     setSent(true);
-    onSubmit(n);
+    onSubmit(rating, feedback.trim());
   };
 
   return (
     <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-ink/40 px-4">
-      <div className="w-full max-w-sm rounded-2xl border-2 border-ink bg-paper-raised p-6 text-center shadow-brutal animate-fade-up">
+      <div className="relative w-full max-w-sm rounded-2xl border-2 border-ink bg-paper-raised p-6 text-center shadow-brutal animate-fade-up">
         <button
           onClick={onDismiss}
           className="absolute right-4 top-4 text-ink-faint hover:text-ink"
@@ -45,7 +47,9 @@ export function RatingModal({ counts, onSubmit, onDismiss }) {
           </>
         ) : (
           <>
-            <p className="font-display text-xl font-bold text-ink">How'd that meeting go? 👀</p>
+            <p className="font-display text-xl font-bold text-ink">
+              {meeting ? "How'd that meeting go? 👀" : "How'd that session go? 👀"}
+            </p>
             <p className="mt-2 text-sm text-ink-soft">{summary}</p>
             <div className="mt-5 flex justify-center gap-1.5">
               {[1, 2, 3, 4, 5].map((n) => (
@@ -53,7 +57,7 @@ export function RatingModal({ counts, onSubmit, onDismiss }) {
                   key={n}
                   onMouseEnter={() => setHovered(n)}
                   onMouseLeave={() => setHovered(0)}
-                  onClick={() => handlePick(n)}
+                  onClick={() => setRating(n)}
                   aria-label={`${n} star${n === 1 ? "" : "s"}`}
                   className="p-0.5 transition-transform hover:-translate-y-0.5"
                 >
@@ -67,6 +71,24 @@ export function RatingModal({ counts, onSubmit, onDismiss }) {
                 </button>
               ))}
             </div>
+
+            {rating > 0 && (
+              <div className="mt-4 animate-fade-up text-left">
+                <textarea
+                  value={feedback}
+                  onChange={(e) => setFeedback(e.target.value)}
+                  placeholder="Anything you want to add? (optional)"
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-line bg-paper px-3 py-2 text-sm placeholder:text-ink-faint focus:border-periwinkle"
+                />
+                <button
+                  onClick={submit}
+                  className="mt-3 h-10 w-full rounded-xl border-2 border-ink bg-periwinkle font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+                >
+                  Send
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

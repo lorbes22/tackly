@@ -96,7 +96,7 @@ export const NodeCard = forwardRef(function NodeCard(
         </p>
       )}
       {/* "+ Add note" reveals on hover for any card, note count or not. */}
-      <div className="mt-0 max-h-0 overflow-hidden pt-0 opacity-0 transition-all group-hover/node:mt-2 group-hover/node:max-h-5 group-hover/node:border-t group-hover/node:border-ink/10 group-hover/node:pt-1.5 group-hover/node:opacity-100">
+      <div className="mt-0 max-h-0 overflow-hidden pt-0 opacity-0 transition-all group-hover/node:mt-2 group-hover/node:max-h-6 group-hover/node:border-t group-hover/node:border-ink/10 group-hover/node:pt-1.5 group-hover/node:opacity-100">
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
@@ -104,7 +104,7 @@ export const NodeCard = forwardRef(function NodeCard(
             e.stopPropagation();
             onNotesClick?.(node.id);
           }}
-          className="text-[10px] font-bold uppercase tracking-wide text-ink/45 hover:text-ink hover:underline"
+          className="text-[10px] font-bold uppercase leading-none tracking-wide text-ink/45 hover:text-ink hover:underline"
         >
           + Add note
         </button>

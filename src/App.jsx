@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "@/lib/AuthContext";
 import { RequireAdmin, RequireAuth } from "@/lib/guards";
 import Landing from "@/pages/Landing";
+import Plans from "@/pages/Plans";
 import Terms from "@/pages/Terms";
 import Privacy from "@/pages/Privacy";
 import Support from "@/pages/Support";
@@ -29,6 +30,7 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/" element={<Landing />} />
+          <Route path="/plans" element={<Plans />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/support" element={<Support />} />

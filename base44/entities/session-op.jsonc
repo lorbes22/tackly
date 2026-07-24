@@ -19,6 +19,7 @@
         "update_status",
         "merge_nodes",
         "add_note",
+        "delete_note",
         "hide_node",
         "update_node"
       ],
@@ -26,7 +27,7 @@
     },
     "payload": {
       "type": "object",
-      "description": "Op payload: create_node {node}, attach_node {node_id, utterance_id, action, summary?}, create_edge {edge}, update_status {node_id, status}, merge_nodes {keep_id, remove_id, merged_summary?}, add_note {node_id, note_id, text}, hide_node {node_id}",
+      "description": "Op payload: create_node {node}, attach_node {node_id, utterance_id, action, summary?}, create_edge {edge}, update_status {node_id, status}, merge_nodes {keep_id, remove_id, merged_summary?}, add_note {node_id, note_id, text}, delete_note {node_id, note_id}, hide_node {node_id}",
       "properties": {}
     },
     "owner_email": {
