@@ -28,6 +28,15 @@
     "set_by_email": {
       "type": "string",
       "description": "Admin who activated this config."
+    },
+    "gemini_cache_name": {
+      "type": "string",
+      "description": "Google-only: the resource name of this tier's active explicit CachedContent object (system prompt + tool declaration), so repeat calls reuse it instead of recreating one every time. Set/refreshed by shared/gemini.ts via shared/llm.ts, not the admin UI directly."
+    },
+    "gemini_cache_expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Google-only: when gemini_cache_name expires. A new cache is created once this passes."
     }
   },
   "required": ["tier", "provider", "model", "secret_env_var"],

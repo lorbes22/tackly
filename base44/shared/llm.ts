@@ -8,7 +8,7 @@
 // existed, only optionally different once an admin has verified a swap.
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { classifyWithTool, estimateCostUsd as estimateAnthropicCostUsd, makeAnthropic } from "./claude.ts";
-import { classifyWithGemini, estimateGeminiCostUsd } from "./gemini.ts";
+import { classifyWithGeminiCached, estimateGeminiCostUsd } from "./gemini.ts";
 
 export type ClassifyTool = {
   name: string;
@@ -66,13 +66,27 @@ export async function classifyForTier(opts: {
   }
 
   if (cfg.provider === "google") {
-    const { data, usage } = await classifyWithGemini({
+    const existingCache =
+      cfg.gemini_cache_name && cfg.gemini_cache_expires_at
+        ? { name: cfg.gemini_cache_name, expiresAt: cfg.gemini_cache_expires_at }
+        : null;
+    const { data, usage, cache } = await classifyWithGeminiCached({
       apiKey,
       model: cfg.model,
       system: opts.system,
       user: opts.user,
       tool: opts.tool,
+      existingCache,
     });
+    // Persist a newly-created cache so the NEXT call reuses it instead of
+    // paying to recreate one every time — best-effort, a failed write here
+    // just means the next call recreates a cache, not a broken call now.
+    if (cache && cache.name !== cfg.gemini_cache_name) {
+      await opts.base44.asServiceRole.entities.LlmConfig.update(cfg.id, {
+        gemini_cache_name: cache.name,
+        gemini_cache_expires_at: cache.expiresAt,
+      }).catch(() => {});
+    }
     return { data, costUsd: estimateGeminiCostUsd(cfg.model, usage), provider: "google", model: cfg.model };
   }
 
