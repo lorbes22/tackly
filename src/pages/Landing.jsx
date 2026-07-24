@@ -127,9 +127,11 @@ export default function Landing() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-periwinkle-tint">
                   <Icon className="h-5 w-5 text-periwinkle-deep" />
                 </div>
-                <p className="mt-4 font-display text-lg font-bold text-ink">{title}</p>
+                <div className="mt-4 flex items-center gap-2">
+                  <p className="font-display text-lg font-bold text-ink">{title}</p>
+                  {platforms && <PlatformIconRow />}
+                </div>
                 <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">{body}</p>
-                {platforms && <PlatformIconRow className="mt-3" />}
               </div>
             ))}
           </div>
