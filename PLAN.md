@@ -189,6 +189,24 @@ Round 1 cut the dominant cost driver but a real 6-minute session still ran ~$0.0
 
 **Not verified in-browser:** the visual/UX pieces (spacing, shimmer, floating transcript hover/click states) were built and code-reviewed but not screenshotted against the live site — no login credentials available for `tackly.co` in this environment. Worth a manual pass on a real live session.
 
+### Round 4 (same day) — real feedback from "Token Test V5 (Major Changes)", the first real session run after rounds 1-3
+
+**Validation: the round-1/2/3 changes worked.** $0.21 for a 7-minute session (~3¢/min, down from the original $0.0667/min), 21 nodes, and — in the user's own words during the test — "the structure of everything is actually pretty good... looks a lot better than before, not as messy as before." Node classification (including the new `fact`/`plan` types) worked correctly in a real session, not just the synthetic tests from Round 2/3.
+
+**A THIRD over-fragmentation pattern found, via the same real-transcript-review method as Round 2's fix.** Reviewing V5's actual node map turned up ~12 orphan, parentless, empty-summary `waffle`/`idea` nodes with vague auto-generated titles ("Incomplete observation or comparison", "Fragment about page position", "And by default, obviously it shows us") scattered alongside the ~5 well-formed nodes that correctly captured the user's real feedback. Root cause: natural speech pauses/hesitation/self-correction split ONE continuous explanation into several STT utterance fragments, and each fragment — even ones carrying zero content of its own — was getting its own waffle node instead of being silently dropped, because the fragment's real content had already landed on a nearby node. Fixed in `TIER1_SYSTEM`: bucket 1 (SKIP) now explicitly covers mid-thought fragments that are "just connective tissue," and bucket 2 (WAFFLE) gets an explicit test — "if you can't write even a one-sentence summary beyond the title, that's a sign it's SKIP, not WAFFLE" — plus a worked example pulled directly from the V5 fragments. Verified against a reconstructed version of the exact V5 fragment sequence: 4 nodes (1 real + 3 orphan waffle) → 1 node.
+
+**Floating transcript, redesigned based on explicit real feedback** ("it just looks like all of the words together... it would be nice if it was structured like an actual transcript... allow us to scroll... most recent thing visible by default"). `FloatingTranscript.jsx` rewritten:
+- Each utterance is now its own bordered bubble (same visual language as the existing hold-to-talk bubbles in `LiveBars.jsx`'s `LiveUtteranceFeed`), not a plain truncated text line.
+- Scrollable (`overflow-y-auto`, last 20 utterances instead of 6), auto-scrolls to the newest utterance as it arrives (`scrollRef` + a `useEffect` keyed on the latest utterance id) — chat-style, newest visible by default, scroll up for history.
+- The newest bubble gets a periwinkle glow/light-sweep (reusing the `shimmer` animation from the ghost node) until a newer utterance supersedes it — the "glowing purple, light-sweeping" effect asked for.
+- Converted the outer container from a plain `<div onClick>` to `role="button" tabIndex={0}` with a keydown handler, matching this project's established pattern for non-`<button>` interactive elements (`NodeCard.jsx` did the same for the same reason — a real `<button>` can't validly contain the inner scrollable region's own interaction).
+
+**Pending/"tackling" node depth, fixed based on explicit real feedback** ("the actual nodes look kind of 2D, 3D-ish [depth]... but this one doesn't, it's flat 2D... if we could do that AND make it look like the other nodes, that would be amazing"). `GhostNodeCard.jsx` now also carries `shadow-brutal` — the same offset drop-shadow every real `NodeCard` has — on top of the light-sweep shimmer added in Round 3, so it no longer reads as flat next to committed nodes.
+
+**Explicitly declined, per direct instruction:** a "timestamped waffle" node type (raised, then immediately retracted, mid-session: *"waffle could be actually — no, forget about it, not a timestamp waffle"*) — not built, correctly not needed.
+
+**Not verified in-browser:** same caveat as Round 3 — the floating transcript's bubble/scroll/glow behavior and the ghost node's new shadow were built and reviewed in code plus verified for classification correctness via `base44 exec`, but not screenshotted live (no login credentials available here).
+
 ---
 
 ## 2. Node taxonomy & identification logic
