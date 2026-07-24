@@ -106,6 +106,13 @@ async function createGeminiCache(opts: {
 // an expired-but-not-yet-cleaned-up name, a transient error) falls back to
 // the plain uncached call rather than failing the whole classification —
 // caching here is purely a cost optimization, never a correctness dependency.
+// `skipCacheAttempt` lets the caller skip straight to the uncached call when
+// it already knows caching is in a cooldown for this tier (see shared/llm.ts
+// — a naive retry-every-call design here previously DOUBLED real request
+// volume on every tier, since cache creation permanently fails for some
+// prompt/quota combinations, which burned through per-minute rate limits and
+// caused real classification calls to fail with 429s — a genuine production
+// incident, not hypothetical, see PLAN.md).
 export async function classifyWithGeminiCached(opts: {
   apiKey: string;
   model: string;
@@ -113,20 +120,26 @@ export async function classifyWithGeminiCached(opts: {
   user: string;
   tool: GeminiTool;
   existingCache?: GeminiCacheRef | null;
-}): Promise<{ data: any; usage: GeminiUsage; cache: GeminiCacheRef | null }> {
+  skipCacheAttempt?: boolean;
+}): Promise<{ data: any; usage: GeminiUsage; cache: GeminiCacheRef | null; cacheAttemptFailed: boolean }> {
   let cache = opts.existingCache;
   const stillValid = cache && new Date(cache.expiresAt).getTime() - Date.now() > 60_000;
+  let cacheAttemptFailed = false;
+
   if (!stillValid) {
-    try {
-      cache = await createGeminiCache({
-        apiKey: opts.apiKey,
-        model: opts.model,
-        system: opts.system,
-        tool: opts.tool,
-      });
-    } catch (err) {
-      console.warn(`Gemini cache create failed, falling back to uncached call: ${(err as Error).message}`);
-      cache = null;
+    cache = null;
+    if (!opts.skipCacheAttempt) {
+      try {
+        cache = await createGeminiCache({
+          apiKey: opts.apiKey,
+          model: opts.model,
+          system: opts.system,
+          tool: opts.tool,
+        });
+      } catch (err) {
+        console.warn(`Gemini cache create failed, falling back to uncached call: ${(err as Error).message}`);
+        cacheAttemptFailed = true;
+      }
     }
   }
 
@@ -150,14 +163,15 @@ export async function classifyWithGeminiCached(opts: {
       const body = await res.json();
       const part = body.candidates?.[0]?.content?.parts?.find((p: any) => p.functionCall);
       const data = part?.functionCall?.args ?? null;
-      return { data, usage: (body.usageMetadata ?? {}) as GeminiUsage, cache };
+      return { data, usage: (body.usageMetadata ?? {}) as GeminiUsage, cache, cacheAttemptFailed };
     } catch (err) {
       console.warn(`Gemini cached generateContent failed, falling back to uncached call: ${(err as Error).message}`);
+      cacheAttemptFailed = true;
     }
   }
 
   const { data, usage } = await classifyWithGemini(opts);
-  return { data, usage, cache: null };
+  return { data, usage, cache: null, cacheAttemptFailed };
 }
 
 // Published rates (ai.google.dev/gemini-api/docs/pricing, checked

@@ -70,21 +70,35 @@ export async function classifyForTier(opts: {
       cfg.gemini_cache_name && cfg.gemini_cache_expires_at
         ? { name: cfg.gemini_cache_name, expiresAt: cfg.gemini_cache_expires_at }
         : null;
-    const { data, usage, cache } = await classifyWithGeminiCached({
+    // Skip re-attempting cache creation while in a post-failure cooldown —
+    // retrying on literally every call (the original design) doubled real
+    // Gemini request volume on every tier whose prompt/quota can't cache
+    // (see PLAN.md), which burned through per-minute rate limits and caused
+    // genuine classification calls to fail with 429s.
+    const retryAfter = cfg.gemini_cache_retry_after ? new Date(cfg.gemini_cache_retry_after).getTime() : 0;
+    const skipCacheAttempt = retryAfter > Date.now();
+    const { data, usage, cache, cacheAttemptFailed } = await classifyWithGeminiCached({
       apiKey,
       model: cfg.model,
       system: opts.system,
       user: opts.user,
       tool: opts.tool,
       existingCache,
+      skipCacheAttempt,
     });
     // Persist a newly-created cache so the NEXT call reuses it instead of
-    // paying to recreate one every time — best-effort, a failed write here
-    // just means the next call recreates a cache, not a broken call now.
+    // paying to recreate one every time, or start a cooldown after a failed
+    // attempt — best-effort, a failed write here just means the next call
+    // tries again, not a broken call now.
     if (cache && cache.name !== cfg.gemini_cache_name) {
       await opts.base44.asServiceRole.entities.LlmConfig.update(cfg.id, {
         gemini_cache_name: cache.name,
         gemini_cache_expires_at: cache.expiresAt,
+        gemini_cache_retry_after: null,
+      }).catch(() => {});
+    } else if (cacheAttemptFailed) {
+      await opts.base44.asServiceRole.entities.LlmConfig.update(cfg.id, {
+        gemini_cache_retry_after: new Date(Date.now() + 15 * 60_000).toISOString(),
       }).catch(() => {});
     }
     return { data, costUsd: estimateGeminiCostUsd(cfg.model, usage), provider: "google", model: cfg.model };

@@ -37,6 +37,11 @@
       "type": "string",
       "format": "date-time",
       "description": "Google-only: when gemini_cache_name expires. A new cache is created once this passes."
+    },
+    "gemini_cache_retry_after": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Google-only: set after a cache create/use failure, so calls skip re-attempting cache creation until this passes instead of retrying (and wasting a request) on every single call. Cleared once a cache is successfully created."
     }
   },
   "required": ["tier", "provider", "model", "secret_env_var"],
