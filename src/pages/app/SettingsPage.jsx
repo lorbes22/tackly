@@ -1,10 +1,18 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { UsageBadge } from "@/components/UsageBadge";
 import { PlansModal } from "@/components/PlansModal";
 import { Calendar, PartyPopper } from "lucide-react";
+
+// This page's root div carries animate-fade-up, whose "both" fill-mode
+// leaves a permanent non-none transform on it once the animation ends —
+// per the CSS spec that makes it the containing block for any
+// `position: fixed` descendant. Every fixed-overlay popup on this page is
+// portaled to document.body to avoid getting capped to the page's own
+// max-w-lg column instead of the real viewport.
 
 // Just this account's plan: usage, manage-billing, and a "view plans"
 // button that pops the full comparison grid up as a modal (PlansModal) —
@@ -72,43 +80,45 @@ function PlansSection() {
 
       {showPlans && <PlansModal onClose={() => setShowPlans(false)} />}
 
-      {(checkoutStatus === "success" || checkoutStatus === "cancel") && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4"
-          onClick={dismissCheckoutStatus}
-        >
+      {(checkoutStatus === "success" || checkoutStatus === "cancel") &&
+        createPortal(
           <div
-            className="w-full max-w-sm rounded-2xl border-2 border-ink bg-paper-raised p-6 text-center shadow-brutal animate-fade-up"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4"
+            onClick={dismissCheckoutStatus}
           >
             <div
-              className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full ${
-                checkoutStatus === "success" ? "bg-note-mint" : "bg-paper-sunken"
-              }`}
+              className="w-full max-w-sm rounded-2xl border-2 border-ink bg-paper-raised p-6 text-center shadow-brutal animate-fade-up"
+              onClick={(e) => e.stopPropagation()}
             >
-              <PartyPopper
-                className={`h-6 w-6 ${
-                  checkoutStatus === "success" ? "text-ink" : "text-ink-faint"
+              <div
+                className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full ${
+                  checkoutStatus === "success" ? "bg-note-mint" : "bg-paper-sunken"
                 }`}
-              />
+              >
+                <PartyPopper
+                  className={`h-6 w-6 ${
+                    checkoutStatus === "success" ? "text-ink" : "text-ink-faint"
+                  }`}
+                />
+              </div>
+              <p className="mt-4 font-display text-lg font-bold text-ink">
+                {checkoutStatus === "success" ? "You're upgraded!" : "No hard feelings"}
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+                {checkoutStatus === "success"
+                  ? "Your plan just leveled up — go ramble accordingly."
+                  : "Checkout canceled, nothing changed. Your plan's exactly where you left it."}
+              </p>
+              <button
+                onClick={dismissCheckoutStatus}
+                className="mt-5 h-10 w-full rounded-xl border-2 border-ink bg-periwinkle font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+              >
+                {checkoutStatus === "success" ? "Let's go" : "Got it"}
+              </button>
             </div>
-            <p className="mt-4 font-display text-lg font-bold text-ink">
-              {checkoutStatus === "success" ? "You're upgraded!" : "No hard feelings"}
-            </p>
-            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-              {checkoutStatus === "success"
-                ? "Your plan just leveled up — go ramble accordingly."
-                : "Checkout canceled, nothing changed. Your plan's exactly where you left it."}
-            </p>
-            <button
-              onClick={dismissCheckoutStatus}
-              className="mt-5 h-10 w-full rounded-xl border-2 border-ink bg-periwinkle font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
-            >
-              {checkoutStatus === "success" ? "Let's go" : "Got it"}
-            </button>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </>
   );
 }
@@ -142,32 +152,34 @@ function CalendarSection() {
         </button>
       </section>
 
-      {showComingSoon && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4"
-          onClick={() => setShowComingSoon(false)}
-        >
+      {showComingSoon &&
+        createPortal(
           <div
-            className="w-full max-w-sm rounded-2xl border-2 border-ink bg-paper-raised p-6 text-center shadow-brutal animate-fade-up"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4"
+            onClick={() => setShowComingSoon(false)}
           >
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-periwinkle-tint">
-              <Calendar className="h-6 w-6 text-periwinkle-deep" />
-            </div>
-            <p className="mt-4 font-display text-lg font-bold text-ink">Coming soon</p>
-            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-              We're still working on this — you can still invite a bot to your meeting instantly
-              instead by sharing the link.
-            </p>
-            <button
-              onClick={() => setShowComingSoon(false)}
-              className="mt-5 h-10 w-full rounded-xl border-2 border-ink bg-periwinkle font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+            <div
+              className="w-full max-w-sm rounded-2xl border-2 border-ink bg-paper-raised p-6 text-center shadow-brutal animate-fade-up"
+              onClick={(e) => e.stopPropagation()}
             >
-              Got it
-            </button>
-          </div>
-        </div>
-      )}
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-periwinkle-tint">
+                <Calendar className="h-6 w-6 text-periwinkle-deep" />
+              </div>
+              <p className="mt-4 font-display text-lg font-bold text-ink">Coming soon</p>
+              <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+                We're still working on this — you can still invite a bot to your meeting instantly
+                instead by sharing the link.
+              </p>
+              <button
+                onClick={() => setShowComingSoon(false)}
+                className="mt-5 h-10 w-full rounded-xl border-2 border-ink bg-periwinkle font-display text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+              >
+                Got it
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
     </>
   );
 }

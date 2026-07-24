@@ -56,7 +56,7 @@ export function PlanCards({ className = "" }) {
           return (
             <div
               key={plan.id}
-              className={`relative rounded-2xl border-2 border-ink p-6 shadow-brutal-sm ${
+              className={`relative flex h-full flex-col rounded-2xl border-2 border-ink p-6 shadow-brutal-sm ${
                 isFree ? "bg-periwinkle-tint" : "bg-paper-raised"
               }`}
             >
@@ -65,23 +65,29 @@ export function PlanCards({ className = "" }) {
                   Most used
                 </span>
               )}
-              <p className="font-display text-lg font-bold text-ink">{plan.name}</p>
-              <p className="mt-1 font-display text-3xl font-bold text-ink">
-                {isFree ? "£0" : `£${plan.price_monthly}`}
-                <span className="text-sm font-medium text-ink-soft">/mo</span>
-              </p>
-              {plan.features?.length > 0 && (
-                <ul className="mt-4 space-y-2">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm text-ink-soft">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-periwinkle-deep" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <div>
+                <p className="font-display text-lg font-bold text-ink">{plan.name}</p>
+                <p className="mt-1 font-display text-3xl font-bold text-ink">
+                  {isFree ? "£0" : `£${plan.price_monthly}`}
+                  <span className="text-sm font-medium text-ink-soft">/mo</span>
+                </p>
+                {plan.features?.length > 0 && (
+                  <ul className="mt-4 space-y-2">
+                    {plan.features.map((f) => (
+                      <li key={f} className="flex items-start gap-2 text-sm text-ink-soft">
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-periwinkle-deep" />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
 
-              <div className="mt-5">
+              {/* mt-auto pins every card's CTA to the same bottom edge
+                  regardless of how many features the plan above it lists —
+                  cards are already equal-height via the grid, this just
+                  stops the button floating wherever its own content ends. */}
+              <div className="mt-auto pt-5">
                 {isCurrent || isDefaultFree ? (
                   <p className="flex h-10 items-center justify-center gap-1.5 rounded-xl border-2 border-ink bg-paper-raised font-display text-sm font-bold text-ink shadow-brutal-sm">
                     <Check className="h-4 w-4" /> Current plan
