@@ -4,7 +4,11 @@ import { useHoldToTalk } from "@/lib/useHoldToTalk";
 
 // Live feed of recent utterances above the capture bar. Each utterance floats
 // up and fades the moment it's been processed into the map, rather than just
-// vanishing — a small "that thought landed" cue.
+// vanishing — a small "that thought landed" cue. Uses dedicated
+// utterance-in/utterance-out animations (tailwind.config.js) rather than the
+// generic fade-up/float-away used elsewhere — a slight spring-in on arrival
+// and a softer blur+dissolve on exit, per feedback that these felt too
+// abrupt/mechanical.
 export function LiveUtteranceFeed({ utterances }) {
   const [exiting, setExiting] = useState(() => new Set());
   const timers = useRef(new Map());
@@ -30,7 +34,7 @@ export function LiveUtteranceFeed({ utterances }) {
             next.delete(u.id);
             return next;
           });
-        }, 640);
+        }, 740);
         timers.current.set(u.id, t);
       }
     }
@@ -54,7 +58,7 @@ export function LiveUtteranceFeed({ utterances }) {
         <div
           key={u.id}
           className={`max-w-md rounded-xl border-2 border-ink bg-paper-raised px-3 py-1.5 text-sm text-ink shadow-brutal-sm ${
-            exiting.has(u.id) ? "animate-float-away" : "animate-fade-up"
+            exiting.has(u.id) ? "animate-utterance-out" : "animate-utterance-in"
           }`}
         >
           {u.speaker_label && u.speaker_label !== "Me" && (

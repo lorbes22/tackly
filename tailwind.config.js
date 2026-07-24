@@ -101,6 +101,24 @@ export default {
           '60%': { opacity: '0', transform: 'translateY(-14px)' },
           '100%': { opacity: '0', transform: 'translateY(-14px)', maxHeight: '0px', marginBottom: '0px' },
         },
+        // Live utterance bubble arrival — a touch of spring/overshoot so it
+        // feels more alive than a flat fade, distinct from the generic
+        // fade-up used elsewhere in the app (feedback: bubbles needed "more
+        // motion").
+        'utterance-in': {
+          '0%': { opacity: '0', transform: 'translateY(14px) scale(0.94)' },
+          '65%': { opacity: '1', transform: 'translateY(-2px) scale(1.015)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        // Live utterance bubble exit — a softer dissolve (blur + rise + only
+        // collapsing height at the very end) instead of the more mechanical
+        // float-away, so a bubble leaving reads as seamless rather than a
+        // sudden pop.
+        'utterance-out': {
+          '0%': { opacity: '1', transform: 'translateY(0) scale(1)', maxHeight: '80px', filter: 'blur(0px)' },
+          '55%': { opacity: '0.3', transform: 'translateY(-10px) scale(0.98)', maxHeight: '80px', filter: 'blur(1.5px)' },
+          '100%': { opacity: '0', transform: 'translateY(-20px) scale(0.96)', maxHeight: '0px', marginBottom: '0px', filter: 'blur(3px)' },
+        },
         // "Tackling" listening indicator — equalizer bars
         'eq-bar': {
           '0%, 100%': { transform: 'scaleY(0.35)' },
@@ -124,6 +142,8 @@ export default {
         'pop-in': 'pop-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both',
         'fade-up': 'fade-up 400ms ease-out both',
         'float-away': 'float-away 620ms ease-in forwards',
+        'utterance-in': 'utterance-in 480ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        'utterance-out': 'utterance-out 720ms cubic-bezier(0.4, 0, 0.2, 1) forwards',
         'eq-bar': 'eq-bar 900ms ease-in-out infinite',
         forming: 'forming 1.4s ease-in-out infinite',
         shimmer: 'shimmer 1.8s linear infinite',

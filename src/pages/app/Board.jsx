@@ -57,6 +57,15 @@ export default function Board() {
   const [showTranscript, setShowTranscript] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [phase, setPhase] = useState(null); // null | "mapping" | "linking"
+  // Brief "Tackled" confirmation right as mapping/linking finishes, instead
+  // of the pill just vanishing with no sense of closure — fades on its own.
+  const [justTackled, setJustTackled] = useState(false);
+  const justTackledTimerRef = useRef(null);
+  // One-time hint bubble shown above the "tackled" bar the first time this
+  // visit lands on an already-complete, non-continuable thread.
+  const [showDeadEndHint, setShowDeadEndHint] = useState(false);
+  const deadEndHintShownRef = useRef(false);
+  const deadEndHintTimerRef = useRef(null);
   const [notFound, setNotFound] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [noteModalNodeId, setNoteModalNodeId] = useState(null);
@@ -430,12 +439,26 @@ export default function Board() {
   );
 
   useEffect(() => () => clearTimeout(flushTimerRef.current), []);
+  useEffect(() => () => clearTimeout(justTackledTimerRef.current), []);
 
   const isLive = session?.status === "active";
   const isMicLive = isLive && (session?.capture_source === "mic_live" || micContinuing);
   const isBotLive = isLive && session?.capture_source === "bot_live" && !micContinuing;
   const canContinueByVoice =
     session?.capture_source === "bot_live" && session?.status === "complete" && !micContinuing;
+  // A completed personal/import thread has no hold-to-talk bar and no
+  // "continue by voice" alternative (that's bot-only) — previously that just
+  // left an empty area at the bottom with no indication anything's final.
+  const isDeadEnd = session?.status === "complete" && !phase && !canContinueByVoice;
+
+  useEffect(() => {
+    if (isDeadEnd && !deadEndHintShownRef.current) {
+      deadEndHintShownRef.current = true;
+      setShowDeadEndHint(true);
+      deadEndHintTimerRef.current = setTimeout(() => setShowDeadEndHint(false), 5000);
+    }
+  }, [isDeadEnd]);
+  useEffect(() => () => clearTimeout(deadEndHintTimerRef.current), []);
 
   // Fallback ops poll while live: applies any op not already seen (applyOp
   // dedups by id), so a dropped realtime event is caught — never a refetch.
@@ -690,7 +713,17 @@ export default function Board() {
           }
         }
         if (!stopped) {
-          const s = await refreshSession();
+          // Fetch directly rather than refreshSession() — that setState's the
+          // shared `session` (a dependency of this very effect), which tears
+          // this effect down (cleanup sets `stopped = true`) while
+          // consolidate-session is still in flight below. The `finally`
+          // block's `setPhase(null)` would then get skipped by that same
+          // `stopped` flag, leaving the header stuck on "Linking ideas…"
+          // forever even though the backend call finished fine (confirmed:
+          // a real zero-node session's consolidated_at got stamped
+          // correctly, but the UI never noticed). Read-only fetch here,
+          // shared state is refreshed once for real in the finally block.
+          const s = await Session.get(sessionId);
           if (!s.consolidated_at) {
             setPhase("linking");
             await base44.functions.invoke("consolidate-session", {
@@ -704,6 +737,9 @@ export default function Board() {
         processingRef.current = false;
         if (!stopped) {
           setPhase(null);
+          setJustTackled(true);
+          clearTimeout(justTackledTimerRef.current);
+          justTackledTimerRef.current = setTimeout(() => setJustTackled(false), 3000);
           refreshSession().catch(() => {});
           setUtterances((prev) => prev.map((u) => ({ ...u, processed: true })));
         }
@@ -939,6 +975,11 @@ export default function Board() {
               )}
             </span>
           )}
+          {!phase && justTackled && (
+            <span className="flex items-center gap-2 rounded-full border-2 border-ink bg-note-mint px-3 py-1 text-xs font-bold text-ink shadow-brutal-sm animate-fade-up">
+              Tackled 👀
+            </span>
+          )}
           <button
             onClick={() => {
               setSelectedId(null);
@@ -1147,6 +1188,20 @@ export default function Board() {
             <Mic className="h-4 w-4" />
             Continue this thread by voice
           </button>
+        )}
+        {isDeadEnd && (
+          <>
+            {showDeadEndHint && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-20 z-10 flex justify-center px-4">
+                <div className="max-w-sm rounded-xl border-2 border-ink bg-paper-raised px-3.5 py-2 text-center text-sm font-medium text-ink shadow-brutal-sm animate-fade-up">
+                  You can still add notes if you need to, otherwise create a new thread.
+                </div>
+              </div>
+            )}
+            <div className="pointer-events-none absolute inset-x-0 bottom-5 z-10 mx-auto flex h-12 w-fit items-center gap-2 rounded-xl border-2 border-ink bg-paper-sunken px-6 text-sm font-bold text-ink-soft shadow-brutal-sm">
+              This thread has been tackled 👀
+            </div>
+          </>
         )}
         {showRating && (
           <RatingModal

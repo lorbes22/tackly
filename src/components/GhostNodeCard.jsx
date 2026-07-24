@@ -9,10 +9,12 @@ import { Sparkles } from "lucide-react";
 // a static box waiting around. `shadow-brutal` matches the offset drop-
 // shadow every real NodeCard has — real user feedback (Token Test V5) was
 // that this card read as flat/2D next to the real ones, which all have that
-// depth; keep the light sweep, just add the same shadow.
+// depth; keep the light sweep, just add the same shadow. Solid border (not
+// dashed) too, per follow-up feedback — dashed read as a "checkered stroke"
+// next to real cards' solid ink border.
 export function GhostNodeCard() {
   return (
-    <div className="pointer-events-none relative flex h-[84px] w-56 animate-forming items-center justify-center gap-2 overflow-hidden rounded-note border-2 border-dashed border-ink/30 bg-paper-sunken/70 text-ink-soft shadow-brutal">
+    <div className="pointer-events-none relative flex h-[84px] w-56 animate-forming items-center justify-center gap-2 overflow-hidden rounded-note border-2 border-ink/30 bg-paper-sunken/70 text-ink-soft shadow-brutal">
       <div
         className="absolute inset-0 animate-shimmer"
         style={{

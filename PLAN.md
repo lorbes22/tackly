@@ -207,6 +207,20 @@ Round 1 cut the dominant cost driver but a real 6-minute session still ran ~$0.0
 
 **Not verified in-browser:** same caveat as Round 3 — the floating transcript's bubble/scroll/glow behavior and the ghost node's new shadow were built and reviewed in code plus verified for classification correctness via `base44 exec`, but not screenshotted live (no login credentials available here).
 
+### Round 5 (same day) — a real bug fix + more real feedback, this time on the board/session lifecycle rather than the LLM pipeline
+
+**Real bug found and fixed: "Linking ideas…" could get stuck forever, even on a session with zero nodes.** Root-caused via code reading (not reproducible through `base44 exec` alone, since it's a React effect-timing bug, not a backend one — confirmed the backend itself converges correctly for a zero-node session in isolation). The wrap-up effect (`Board.jsx`, the one that drives Tier-1 then Tier-2 once after a session ends) depends on `[session, sessionId, refreshSession]` and, partway through, called `await refreshSession()` to check `consolidated_at` before starting the Tier-2 call. That `refreshSession()` call updates the shared `session` state — which is this SAME effect's own dependency — so React tears the effect down (running its cleanup, `stopped = true`) while `consolidate-session` is still in flight. By the time that call resolves, the `finally` block's `if (!stopped) { setPhase(null); ... }` is skipped, because `stopped` flipped to `true` moments earlier — leaving the header stuck on "Linking ideas…" forever even though the backend had already finished correctly. Fixed by fetching the session directly (`Session.get(sessionId)`, no state update) at that one spot instead of going through `refreshSession()` — the shared state still gets refreshed for real, once, in the `finally` block where a resulting effect re-run no longer matters.
+
+**"Tackled 👀" confirmation, added.** Instead of the mapping/linking pill just vanishing with no sense of closure, it now shows "Tackled 👀" for 3 seconds right as the wrap-up finishes (`justTackled` state + timer), then fades.
+
+**Completed, non-continuable threads now say so instead of showing an empty bottom bar.** Previously only bot-meeting threads got a "Continue this thread by voice" CTA when complete (`canContinueByVoice`) — a completed personal (mic) or imported thread had literally nothing at the bottom, which read as broken. New `isDeadEnd` state (`session.status === "complete" && !phase && !canContinueByVoice`) now shows a static "This thread has been tackled 👀" bar, plus a one-time hint bubble above it ("You can still add notes if you need to, otherwise create a new thread.") that shows once per visit and fades after 5s (`showDeadEndHint`/`deadEndHintShownRef`).
+
+**Pending node's dashed border → solid**, per follow-up feedback that dashed read as a "checkered stroke" next to real (solid-border) cards. `GhostNodeCard.jsx` still keeps its shimmer + shadow from Round 4, just no longer dashed.
+
+**Live utterance bubble motion, redone.** Feedback was the bubbles above the hold-to-talk button needed "more motion" on entry and a more "seamless" exit. New dedicated `utterance-in` (slight spring/overshoot arrival) and `utterance-out` (blur + rise + late height-collapse, a softer dissolve) animations in `tailwind.config.js`, replacing the generic `fade-up`/`float-away` for this one component (`LiveBars.jsx`'s `LiveUtteranceFeed`) — left `fade-up`/`float-away` themselves untouched since they're used elsewhere in the app.
+
+**Not verified in-browser:** same standing caveat — no login credentials available here for `tackly.co`. The lifecycle bug fix is a React effect-timing fix verified by code reasoning (and by confirming the backend side converges correctly in isolation via `base44 exec`), not by reproducing the actual stuck-UI state live.
+
 ---
 
 ## 2. Node taxonomy & identification logic
