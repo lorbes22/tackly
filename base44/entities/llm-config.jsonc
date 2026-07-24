@@ -1,0 +1,40 @@
+{
+  "name": "LlmConfig",
+  "type": "object",
+  "properties": {
+    "tier": {
+      "type": "string",
+      "enum": ["t1", "t2"],
+      "description": "Which classification tier this row controls — t1 = process-session (live, per-utterance), t2 = consolidate-session (end-of-session merge/edge pass). At most one row per tier is meaningful; the newest is used."
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["anthropic", "google"],
+      "description": "Which API this tier's calls go to."
+    },
+    "model": {
+      "type": "string",
+      "description": "Exact model id string as the provider's API expects it (e.g. claude-haiku-4-5-20251001, gemini-3.5-flash)."
+    },
+    "secret_env_var": {
+      "type": "string",
+      "description": "Name of the Deno secret (set via `npx base44 secrets set KEY=value`) holding this provider's API key. Only the name is stored here — never the key value."
+    },
+    "verified_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this exact provider/model/secret combination last passed a live test call in admin-set-llm-config. A row only exists if it passed."
+    },
+    "set_by_email": {
+      "type": "string",
+      "description": "Admin who activated this config."
+    }
+  },
+  "required": ["tier", "provider", "model", "secret_env_var"],
+  "rls": {
+    "create": { "user_condition": { "role": "admin" } },
+    "read": { "user_condition": { "role": "admin" } },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

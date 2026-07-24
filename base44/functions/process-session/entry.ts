@@ -1,5 +1,5 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
-import { classifyWithTool, estimateCostUsd, makeAnthropic } from "../../shared/claude.ts";
+import { classifyForTier } from "../../shared/llm.ts";
 import { checkQuota, computeBilledMs } from "../../shared/billing.ts";
 
 // All utterances for the session, used to finalize billed_ms the moment the
@@ -18,9 +18,12 @@ async function finalizeBilledMs(
   return computeBilledMs(all);
 }
 
-// Tier-1 classification. Calls Claude Haiku 4.5 directly (not Base44's
-// InvokeLLM) — fast, and the static system prompt is prompt-cached since it's
-// identical on every utterance (PLAN.md §1). Emits a discrete SessionOp
+// Tier-1 classification. Calls Claude Haiku 4.5 directly by default (not
+// Base44's InvokeLLM) — fast, and the static system prompt is prompt-cached
+// since it's identical on every utterance (PLAN.md §1). An admin can point
+// this tier at a different provider/model via Admin > Config > LLM models
+// (see shared/llm.ts) — TIER1_MODEL below is only the fallback default.
+// Emits a discrete SessionOp
 // (create_node / attach_node / create_edge) the instant each decision is
 // applied — the ops log is what the frontend subscribes to; it never
 // re-fetches the board (PLAN.md "Realtime delivery"). Live sessions classify
@@ -552,22 +555,25 @@ Deno.serve(async (req) => {
     let result: { decisions?: Record<string, unknown>[] } = { decisions: [] };
     if (classifyBatch.length) {
       try {
-        const { data, usage } = await classifyWithTool({
-          client: makeAnthropic(),
-          model: TIER1_MODEL,
+        // Provider/model for this tier come from LlmConfig if an admin has
+        // activated one (Admin > Config > LLM models); otherwise this is the
+        // same direct Anthropic Haiku call as before (shared/llm.ts).
+        const { data, costUsd } = await classifyForTier({
+          base44,
+          tier: "t1",
+          defaultModel: TIER1_MODEL,
           system: TIER1_SYSTEM,
           user: buildUserPrompt(session.type, openList, classifyBatch, contextUtts),
           tool: CLASSIFY_TOOL,
         });
         result = data;
-        const cost = estimateCostUsd(TIER1_MODEL, usage);
-        if (cost > 0) {
+        if (costUsd > 0) {
           // Awaited, not fire-and-forget — see consolidate-session's comment
           // on the same pattern; an un-awaited write here can lose the race
           // against the function's own return.
           await base44.entities.Session.updateMany(
             { id: session_id },
-            { $inc: { llm_cost_usd: cost } },
+            { $inc: { llm_cost_usd: costUsd } },
           ).catch(() => {});
         }
       } catch (err) {

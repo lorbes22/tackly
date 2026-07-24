@@ -1,5 +1,5 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
-import { makeAnthropic, classifyWithTool, estimateCostUsd } from "../../shared/claude.ts";
+import { classifyForTier } from "../../shared/llm.ts";
 
 // Tier-2 consolidation: a pass over the whole session map that merges
 // near-duplicate nodes and proposes the connector edges between nodes that
@@ -20,6 +20,9 @@ import { makeAnthropic, classifyWithTool, estimateCostUsd } from "../../shared/c
 // is Sonnet with thinking OFF (not adaptive) — still cheaper than the
 // original setup, keeps Sonnet's stronger judgment, drops the thinking-token
 // bill. Swap TIER2_MODEL and add `thinking: undefined`/omit if so.
+// An admin can also test-drive a different provider/model for this tier live
+// via Admin > Config > LLM models (shared/llm.ts) — TIER2_MODEL below is only
+// the fallback default when no verified LlmConfig row exists for "t2".
 const TIER2_MODEL = "claude-haiku-4-5-20251001";
 const RELATIONS = ["expands", "answers", "blocks", "addresses", "relates_to"];
 
@@ -147,9 +150,10 @@ Deno.serve(async (req) => {
         owner_email: session.owner_email || undefined,
       });
 
-    const { data: result, usage } = await classifyWithTool({
-      client: makeAnthropic(),
-      model: TIER2_MODEL,
+    const { data: result, costUsd: callCost } = await classifyForTier({
+      base44,
+      tier: "t2",
+      defaultModel: TIER2_MODEL,
       maxTokens: 6000,
       system: TIER2_SYSTEM,
       tool: TIER2_TOOL,
@@ -164,7 +168,6 @@ Deno.serve(async (req) => {
         sessionEdges,
       ),
     });
-    const callCost = estimateCostUsd(TIER2_MODEL, usage);
     if (callCost > 0) {
       // Awaited, not fire-and-forget: an un-awaited promise here can lose the
       // race against the function's own return when the merges/edges loops

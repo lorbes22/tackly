@@ -1,0 +1,89 @@
+// Per-tier LLM provider selection (Admin > Config > "LLM models"). Each tier
+// (t1 = process-session, t2 = consolidate-session) can be pointed at a
+// different provider/model/secret via the LlmConfig entity — set through the
+// admin UI, which test-calls the combination live before saving it (see
+// admin-set-llm-config). No config row for a tier, or a missing/invalid
+// secret, always falls back to the tier's hardcoded default Anthropic call —
+// this file can never make a tier's live behavior worse than before it
+// existed, only optionally different once an admin has verified a swap.
+import Anthropic from "npm:@anthropic-ai/sdk";
+import { classifyWithTool, estimateCostUsd as estimateAnthropicCostUsd, makeAnthropic } from "./claude.ts";
+import { classifyWithGemini, estimateGeminiCostUsd } from "./gemini.ts";
+
+export type ClassifyTool = {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+};
+
+export type ClassifyOutcome = {
+  // deno-lint-ignore no-explicit-any
+  data: any;
+  costUsd: number;
+  provider: string;
+  model: string;
+};
+
+export async function classifyForTier(opts: {
+  // deno-lint-ignore no-explicit-any
+  base44: any; // needs .asServiceRole.entities.LlmConfig
+  tier: "t1" | "t2";
+  defaultModel: string; // today's hardcoded Anthropic model for this tier
+  system: string;
+  user: string;
+  tool: ClassifyTool;
+  maxTokens?: number;
+}): Promise<ClassifyOutcome> {
+  const rows = await opts.base44.asServiceRole.entities.LlmConfig.filter(
+    { tier: opts.tier },
+    "-created_date",
+    1,
+  );
+  const cfg = rows[0];
+
+  if (!cfg) {
+    const { data, usage } = await classifyWithTool({
+      client: makeAnthropic(),
+      model: opts.defaultModel,
+      system: opts.system,
+      user: opts.user,
+      tool: opts.tool,
+      maxTokens: opts.maxTokens,
+    });
+    return {
+      data,
+      costUsd: estimateAnthropicCostUsd(opts.defaultModel, usage),
+      provider: "anthropic",
+      model: opts.defaultModel,
+    };
+  }
+
+  const apiKey = Deno.env.get(cfg.secret_env_var);
+  if (!apiKey) {
+    throw new Error(
+      `LlmConfig for tier "${opts.tier}" points at secret "${cfg.secret_env_var}", which isn't set — run npx base44 secrets set ${cfg.secret_env_var}=your-key`,
+    );
+  }
+
+  if (cfg.provider === "google") {
+    const { data, usage } = await classifyWithGemini({
+      apiKey,
+      model: cfg.model,
+      system: opts.system,
+      user: opts.user,
+      tool: opts.tool,
+    });
+    return { data, costUsd: estimateGeminiCostUsd(cfg.model, usage), provider: "google", model: cfg.model };
+  }
+
+  // provider === "anthropic" (a non-default key/model, e.g. a different tier of Claude)
+  const { data, usage } = await classifyWithTool({
+    client: new Anthropic({ apiKey }),
+    model: cfg.model,
+    system: opts.system,
+    user: opts.user,
+    tool: opts.tool,
+    maxTokens: opts.maxTokens,
+  });
+  return { data, costUsd: estimateAnthropicCostUsd(cfg.model, usage), provider: "anthropic", model: cfg.model };
+}

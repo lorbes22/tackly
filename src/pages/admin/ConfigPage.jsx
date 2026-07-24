@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { OnboardingModal } from "@/components/OnboardingModal";
 import { Eye, Settings } from "lucide-react";
+import { LlmModelsCard } from "@/components/LlmModelsCard";
 
 const AppConfig = base44.entities.AppConfig;
 
@@ -105,6 +106,8 @@ export default function ConfigPage() {
           previewMode
         />
       )}
+
+      <LlmModelsCard />
     </div>
   );
 }
