@@ -221,6 +221,10 @@ Round 1 cut the dominant cost driver but a real 6-minute session still ran ~$0.0
 
 **Not verified in-browser:** same standing caveat — no login credentials available here for `tackly.co`. The lifecycle bug fix is a React effect-timing fix verified by code reasoning (and by confirming the backend side converges correctly in isolation via `base44 exec`), not by reproducing the actual stuck-UI state live.
 
+### Round 6 (same day) — tried, then reverted: Tier-2 via Base44's AI Gateway
+
+Briefly moved Tier-2 (`consolidate-session`) off the direct Anthropic call onto Base44's AI Gateway (`base44.aiGateway`, Sonnet) to bill against Base44 credits instead of the Anthropic key. Reverted after real testing: no meaningful cost or quality difference, but it lost Anthropic's prompt-caching discount on Tier-2's system prompt (no `cache_control` equivalent on the OpenAI-compatible gateway path) — so it burned Base44 integration credits on top of the existing Anthropic spend for the same effective cost. Tier-2 is back to direct Haiku via `classifyWithTool` (caching intact), same as end of Round 1.
+
 ---
 
 ## 2. Node taxonomy & identification logic
