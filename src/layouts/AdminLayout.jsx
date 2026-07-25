@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { Logo } from "@/components/Logo";
-import { ArrowLeft, CreditCard, Gauge, LifeBuoy, Mail, Settings, Users } from "lucide-react";
+import { ArrowLeft, CreditCard, Gauge, LifeBuoy, Mail, Newspaper, Settings, Users } from "lucide-react";
 
 function AdminNavLink({ to, end, icon: Icon, label }) {
   return (
@@ -38,6 +38,7 @@ export default function AdminLayout() {
               <AdminNavLink to="/admin/users" icon={Users} label="Users" />
               <AdminNavLink to="/admin/plans" icon={CreditCard} label="Plans" />
               <AdminNavLink to="/admin/emails" icon={Mail} label="Emails" />
+              <AdminNavLink to="/admin/articles" icon={Newspaper} label="Articles" />
               <AdminNavLink to="/admin/config" icon={Settings} label="Config" />
               <AdminNavLink to="/admin/tickets" icon={LifeBuoy} label="Tickets" />
             </nav>

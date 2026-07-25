@@ -43,9 +43,9 @@ export default function Landing() {
   const { user } = useAuth();
 
   useDocumentMeta({
-    title: "Tackly — listens while you speak, builds your thinking in real time",
+    title: "Tackly — the AI notetaker that maps your thinking, not just your transcript",
     description:
-      "Talk solo, join a meeting, or upload a transcript — Tackly turns it into a living map of ideas, decisions, and questions in real time.",
+      "Most AI notetakers hand you a transcript with a summary bolted on. Tackly maps ideas, decisions, risks, and questions live — from meetings, solo voice notes, or a pasted transcript — so you get structure, not just text.",
   });
 
   return (
@@ -178,15 +178,26 @@ export default function Landing() {
 
         <Faq />
 
-        <section className="border-y border-line bg-periwinkle-tint">
-          <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-4 py-16 text-center sm:py-20">
-            <h2 className="font-display text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+        <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:pb-24">
+          <div className="relative overflow-hidden rounded-2xl border-2 border-ink bg-periwinkle px-4 py-16 text-center shadow-brutal sm:py-20">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-2xl"
+            />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -bottom-20 -left-10 h-64 w-64 rounded-full bg-white/10 blur-2xl"
+            />
+            <h2 className="relative font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
               Ready to see what you actually think?
             </h2>
-            <p className="mt-3 max-w-md text-ink-soft">
+            <p className="relative mx-auto mt-3 max-w-md text-periwinkle-tint/90">
               No card. No setup. Just talk.
             </p>
-            <Link to={user ? "/app" : "/signup"} className={`mt-7 ${PRIMARY_CTA_CLASS}`}>
+            <Link
+              to={user ? "/app" : "/signup"}
+              className="relative mt-7 inline-flex h-12 items-center gap-2 rounded-xl border-2 border-ink bg-white px-7 font-display text-base font-bold text-periwinkle-deep shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+            >
               Try it for free
               <ArrowRight className="h-4 w-4" />
             </Link>

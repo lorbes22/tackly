@@ -1,0 +1,56 @@
+{
+  "name": "Article",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Article title — the H1, and the default source for the slug and meta title."
+    },
+    "slug": {
+      "type": "string",
+      "description": "URL path segment, served at /articles/{slug}. Defaults to a slugified title but can be customized in the admin editor."
+    },
+    "excerpt": {
+      "type": "string",
+      "description": "Short summary shown on the articles list page, and used as the default meta description when meta_description is blank."
+    },
+    "content_markdown": {
+      "type": "string",
+      "description": "Full article body, written in Markdown."
+    },
+    "cover_image_url": {
+      "type": "string",
+      "description": "Optional header image URL, also used as the og:image for link previews."
+    },
+    "meta_title": {
+      "type": "string",
+      "description": "Optional <title>/og:title override for SEO. Falls back to title when blank."
+    },
+    "meta_description": {
+      "type": "string",
+      "description": "Optional meta description override for SEO. Falls back to excerpt when blank."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "published"],
+      "default": "draft",
+      "description": "Only published articles are shown on public pages (/articles, /articles/{slug})."
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Set the first time an article's status becomes published; used as its public-facing date."
+    },
+    "author_name": {
+      "type": "string",
+      "default": "Tackly Team"
+    }
+  },
+  "required": ["title", "slug", "content_markdown"],
+  "rls": {
+    "create": { "user_condition": { "role": "admin" } },
+    "read": true,
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

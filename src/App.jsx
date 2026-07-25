@@ -6,6 +6,8 @@ import Plans from "@/pages/Plans";
 import Terms from "@/pages/Terms";
 import Privacy from "@/pages/Privacy";
 import Support from "@/pages/Support";
+import Articles from "@/pages/Articles";
+import ArticleDetail from "@/pages/ArticleDetail";
 import Login from "@/pages/auth/Login";
 import Signup from "@/pages/auth/Signup";
 import ForgotPassword from "@/pages/auth/ForgotPassword";
@@ -23,6 +25,7 @@ import PlansPage from "@/pages/admin/PlansPage";
 import EmailsPage from "@/pages/admin/EmailsPage";
 import ConfigPage from "@/pages/admin/ConfigPage";
 import TicketsPage from "@/pages/admin/TicketsPage";
+import ArticlesPage from "@/pages/admin/ArticlesPage";
 
 export default function App() {
   return (
@@ -34,6 +37,8 @@ export default function App() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/support" element={<Support />} />
+          <Route path="/articles" element={<Articles />} />
+          <Route path="/articles/:slug" element={<ArticleDetail />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -77,6 +82,7 @@ export default function App() {
             <Route path="emails" element={<EmailsPage />} />
             <Route path="config" element={<ConfigPage />} />
             <Route path="tickets" element={<TicketsPage />} />
+            <Route path="articles" element={<ArticlesPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
