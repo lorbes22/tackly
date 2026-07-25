@@ -553,3 +553,18 @@ User feedback on a real session ("GPT - Testing Tackly") pointed at two things m
 - Reconstructed the exact real scenario (a provisional `risk` node already showing "Nodes not staying on the board", plus an unrelated existing `opinion` node) and confirmed the finalizing utterance now keeps the provisional node in place (`"new"`, not hidden) instead of folding into the existing node.
 
 **Not verified in-browser:** the Stage-2 throttling change (`stage2FiredRef`) is a frontend timing change, reasoned through carefully but not exercised via an actual live microphone session in this environment.
+
+---
+
+## 14. TRAILING CLAUSE bug — a plan node that never registered (2026-07-25)
+
+User report: in "Revisions Test V1," saying "So let's say I have a plan to [pause] create a platform that allows you to basically see your thoughts..." didn't register as a plan node initially — a follow-up clarification later created one, but the original didn't. Pulled the real session's node/op history (same temporary admin function pattern, deployed and deleted) to find the exact cause rather than guessing.
+
+**Root cause, precisely identified from the real op log**: AssemblyAI's turn-boundary split that thought across two utterances — utterance A ended mid-clause ("...so let's say I have a plan to"), utterance B completed it a moment later ("create a platform that allows you to see your thoughts..."). Tier 1 finalized utterance A as a single confused node (type=plan, title="Test the current implementation" — conflating an unrelated earlier clause in the same utterance with the dangling "I have a plan to"). A *correct* Stage-2 guess for utterance B ("Create a new platform") had already rendered on the board — but when B finalized, Tier 1 called it **"attach"** (a bare restatement adding nothing new) onto the confused node from A, discarding the correct guess entirely even though B contained the actual, specific plan content.
+
+**Fixed, three parts, all in `process-session/entry.ts`:**
+1. Tightened the `"attach"` definition: a completion containing a specific new noun/detail is never "attach," even if it follows a related lead-in — that's "expand" or "new."
+2. New `TRAILING CLAUSE` rule: an utterance ending on a clause that already signals a type ("I have a plan to", "the risk here is that") gets its own node of that type immediately, with a placeholder title/summary — not folded into whatever else the utterance also mentioned. The utterance that completes it must `"expand"` that *specific* node, not attach elsewhere.
+3. **Closed a real mechanism gap found while verifying**: the prompt now tells the model to replace a placeholder title on `"expand"`, but the backend only ever wrote `summary` for expand (both server-side `Node.update` and the `attach_node` op's client-side handler in `Board.jsx` silently dropped any `title` the model supplied). Fixed both to also apply `title` when present — otherwise the prompt instruction would have been silently unactionable.
+
+**Verified live via `base44 exec`** with the exact real two-utterance sequence from the transcript: utterance A now correctly splits into its own action node plus a placeholder plan node (not one muddled node); utterance B now correctly `expand`s that plan node with both the real title ("Create a thought-mapping platform") and summary, instead of being discarded as a bare "attach." Confirmed the fix only fully worked once the title-write gap above was also closed — first pass got the content into the right node but left the placeholder title in place.

@@ -170,13 +170,14 @@ The test for both: would a person mapping this by hand draw a new box, or just u
 
 Then the action for each decision. Default to "new" for genuinely distinct substance — a granular map of many connected nodes is the goal — but that default stops applying the moment a decision would just restate, correct, or reinforce a node that already exists (see EQUALLY CRITICAL above):
 - "new" — the DEFAULT for a thought that can stand on its own card, INCLUDING a sub-point, cause, consequence, specific detail, example, or named item ABOUT an existing node — as long as it's actually saying something the map doesn't already have. Give type, a punchy title (max 8 words), a 1-2 sentence summary, confidence 0-1, and connect it to the relevant node as its parent (see CONNECTING). Example: after a "UGC platform risk" node exists, "we won't have many creators at the start, so brands won't join" is its OWN new node (a supporting risk/detail) connected to that risk — do NOT fold it into the risk's summary.
-- "attach" — a near-verbatim restatement or bare acknowledgement of an existing node that adds no new information at all; give that node_id.
-- "expand" — the utterance completes the SAME unfinished thought that produced an existing node (a sentence that trailed off across a pause and is now finished), OR it corrects/refines/updates a fact or number an existing node already states, OR it continues the same single reaction/sentiment an existing node already captures — in all these cases nothing NEW is being said, an existing node's summary just needs updating; give node_id + an updated summary. If the utterance adds a genuinely distinct point rather than restating/refining the same one, use "new" connected instead.
+- "attach" — a near-verbatim restatement or bare acknowledgement of an existing node that adds NO new information at all (e.g. "yeah", "right", repeating the same sentence back). A completion that adds real, specific new detail — even if it's finishing a sentence the existing node started — is never "attach"; that's "expand" (or "new" if nothing existing captures it yet). If you're about to attach something that contains a noun phrase, an object, or a specific detail the existing node's summary doesn't already have, that's the wrong action — use "expand" or "new" instead.
+- "expand" — the utterance completes the SAME unfinished thought that produced an existing node (a sentence that trailed off across a pause and is now finished), OR it corrects/refines/updates a fact or number an existing node already states, OR it continues the same single reaction/sentiment an existing node already captures — in all these cases nothing NEW is being said, an existing node's summary just needs updating; give node_id + an updated summary. If the node you're expanding only had a placeholder/generic title (e.g. it was a trailing clause with no object yet — see TRAILING CLAUSE below), ALSO set "title" to the real subject now that it's known — the title field works for "expand" too, not just "new". If the utterance adds a genuinely distinct point rather than restating/refining the same one, use "new" connected instead.
 - "skip" — bucket 1 (true filler) only.
 
 Rules:
 - When unsure whether a thought is genuinely distinct or just restating/refining something already on the map, ask: is this the SAME fact/point evolving, or a NEW fact/point? Same thing evolving → "expand". Genuinely new → "new" connected. Don't default to "new" just because you're unsure — that's exactly the over-fragmentation pattern flagged above.
 - When unsure between one node covering several DISTINCT named items and several connected nodes, choose several. More connected nodes beats compressed ones — but this is about distinct items, not the same item restated (see above).
+- TRAILING CLAUSE — an utterance that ends mid-sentence on a clause that already signals a TYPE even though the object/details haven't arrived yet ("so let's say I have a plan to", "the risk here is that", "one question is whether") gets its OWN new node of that signaled type right away, with a short placeholder title/summary drawn from what's been said so far — do NOT fold it into whatever other topic/action the same utterance also happened to mention. When the next utterance finishes that trailing clause, "expand" THAT SAME trailing-clause node with the real content (title and summary both), not "attach" — finishing a sentence with real, specific content is adding new information, not restating. See the worked example below — this is a real bug found in production, not a hypothetical.
 - attach/expand node_id must come from the existing nodes list (a node that already existed before this turn).
 - For action nodes, put the owner in the title when stated (e.g. "Maya: draft launch email").
 
@@ -272,6 +273,12 @@ Example: OVER-EXPANDING — two distinct facts squashed into one node, a real bu
 Utterance: "One thing I can confirm about Tackly is that the core functionality does work and the LLMs are connected and rendering T1 and T2 classification."
 WRONG (what actually happened): "expand" was used to fold this into an existing evidence node, producing one node titled "Core functionality and LLMs are working" that mashes two separate claims together.
 Correct: this states TWO distinct, independently-checkable facts — (1) core functionality works, (2) the LLMs are connected and rendering T1/T2 — so it's two new evidence nodes, both connected to whatever prompted the status check, not one merged node. The REFINEMENT rule (expand) is for the SAME fact getting corrected or updated with a newer value — it is NOT a license to fold every fact mentioned near an existing node into that node's summary. Ask: is this the value on the existing node changing, or a DIFFERENT thing being confirmed alongside it? Different thing → new, connected — same enumeration rule that applies to ideas/questions applies just as much to facts and evidence.
+
+Example: TRAILING CLAUSE — a real over-attach bug found in production (Revisions Test V1 session).
+Utterance A: "Let's see, let's test it out with like a realistic kind of thought map. So let's say I have a plan to"
+Utterance B (the very next utterance, completing A after a pause): "create a platform that allows you to basically see your thoughts. It sees your thoughts and builds them right in front of you."
+WRONG (what actually happened): utterance A was classified as ONE node, type=plan, title="Test the current implementation" — conflating "let's test it out" (an action about running this test) with the trailing "I have a plan to" into one muddled node. Then utterance B — the actual plan, with real specific content — was marked "attach" onto that same confused node, discarded as if it added nothing new. The correct idea got a good provisional guess ("Create a new platform") along the way, and that got thrown away too.
+Correct: utterance A has TWO things in it — "let's test it out with a realistic thought map" is its own action/topic, AND "so let's say I have a plan to" is a TRAILING CLAUSE that already signals type=plan even though the object hasn't arrived — give it its own new plan node with a short placeholder (e.g. title="New plan (continuing)"). When utterance B arrives, "expand" THAT plan node — not the action node — replacing the placeholder with the real content: title="Create a platform that shows your thoughts", summary from utterance B's actual content. Never "attach" a completion that introduces a specific new subject ("a platform that allows you to see your thoughts") just because it follows a related lead-in.
 
 Example: a live guess is not a reason to skip creating a node.
 Some utterances arrive already annotated "(already showing on the board as a live guess: <type> — "<title>")" — this means a rough guess already rendered for that utterance while it was still being spoken, and the person watching the board can currently see it. If the utterance has real, distinct content of its own, prefer "new" and let that content stand on its own connected node — even when it's closely related to an existing node — rather than "expand"-ing it into that other node's summary. A node that appears and then vanishes moments later (because "new" wasn't chosen) reads as broken, not as tidy. This isn't a license to keep something that's genuinely filler — SKIP is still correct for true filler regardless of what was guessed — it only means: don't fold real, distinct content into an existing node's summary just because a related node happens to already exist. If it later turns out to be redundant, a separate consolidation pass reconciles that — your job right now is to judge the content, not to pre-empt cleanup.
@@ -733,16 +740,21 @@ Deno.serve(async (req) => {
       } else if ((d.action === "attach" || d.action === "expand") && d.node_id) {
         const target = visibleNodes.find((n) => n.id === d.node_id);
         if (!target) continue;
-        if (d.action === "expand" && d.summary) {
-          await base44.entities.Node.update(target.id, {
-            summary: d.summary.slice(0, 600),
-          });
+        // A completed trailing clause can replace a placeholder title, not
+        // just the summary (see TRAILING CLAUSE rule) — only when the model
+        // actually supplied one, so a plain refinement's title stays put.
+        if (d.action === "expand" && (d.summary || d.title)) {
+          const patch: Record<string, unknown> = {};
+          if (d.summary) patch.summary = d.summary.slice(0, 600);
+          if (d.title) patch.title = d.title.slice(0, 90);
+          await base44.entities.Node.update(target.id, patch);
         }
         await appendOp("attach_node", {
           node_id: target.id,
           utterance_id: utt.id,
           action: d.action,
           summary: d.action === "expand" ? d.summary?.slice(0, 600) : undefined,
+          title: d.action === "expand" ? d.title?.slice(0, 90) : undefined,
         }, baseMs);
         links.push({ node_id: target.id, utterance_id: utt.id });
         events.push({

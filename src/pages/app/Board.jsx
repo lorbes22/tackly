@@ -180,10 +180,16 @@ export default function Board() {
         break;
       }
       case "attach_node": {
-        if (payload.action === "expand" && payload.summary && payload.node_id) {
+        if (payload.action === "expand" && payload.node_id && (payload.summary || payload.title)) {
           setNodes((prev) =>
             prev.map((n) =>
-              n.id === payload.node_id ? { ...n, summary: payload.summary } : n
+              n.id === payload.node_id
+                ? {
+                    ...n,
+                    ...(payload.summary ? { summary: payload.summary } : {}),
+                    ...(payload.title ? { title: payload.title } : {}),
+                  }
+                : n
             )
           );
         }
