@@ -24,7 +24,7 @@
     },
     "type": {
       "type": "string",
-      "enum": ["topic", "idea", "evidence", "opinion", "question", "decision", "risk", "action", "waffle", "fact", "plan", "aside"],
+      "enum": ["topic", "idea", "evidence", "opinion", "question", "decision", "update", "risk", "action", "waffle", "fact", "plan", "aside"],
       "description": "Node taxonomy type — color always encodes type"
     },
     "title": {

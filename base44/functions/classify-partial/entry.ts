@@ -9,11 +9,11 @@ import { classifyForTier } from "../../shared/llm.ts";
 // just running on an unfinished utterance) — whatever provider/model an
 // admin has activated for T1 governs this rough-guess pass too.
 const MODEL = "claude-haiku-4-5-20251001";
-const NODE_TYPES = ["topic", "idea", "evidence", "fact", "opinion", "question", "decision", "risk", "action", "plan", "waffle"];
+const NODE_TYPES = ["topic", "idea", "evidence", "fact", "opinion", "question", "decision", "update", "risk", "action", "plan", "waffle"];
 
 const SYSTEM = `You are giving a FAST rough guess of what kind of thought someone is expressing, from a partial (unfinished) sentence. Pick the single best node type and a short title. This is provisional — err toward a reasonable guess.
 
-Types: topic (introducing/framing a subject), idea, evidence (a fact backing up a claim/decision/risk elsewhere), fact (a standalone data point, no argumentative role), opinion, question, decision, risk, action, plan (a multi-step forward-looking goal, bigger than one action) or waffle (off-topic/personal remark with some content).
+Types: topic (introducing/framing a subject), idea, evidence (a fact backing up a claim/decision/risk elsewhere), fact (a standalone data point, no argumentative role), opinion, question, decision, update (reporting something recently changed/fixed/updated, not a live commitment), risk, action, plan (a multi-step forward-looking goal, bigger than one action) or waffle (off-topic/personal remark with some content).
 
 Return via the tool: type, a punchy title (max 8 words), and confidence 0-1 for how sure you are given it's still unfinished.`;
 

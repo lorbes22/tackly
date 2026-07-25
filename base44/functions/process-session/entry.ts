@@ -70,7 +70,7 @@ function isPureFiller(text: string): boolean {
 // very old, already-resolved, non-topic node can age out of what the model
 // is shown as a possible parent/attach target.
 const OPEN_LIST_RECENCY = 50;
-const NODE_TYPES = ["topic", "idea", "question", "decision", "risk", "action", "plan", "evidence", "fact", "opinion", "waffle"];
+const NODE_TYPES = ["topic", "idea", "question", "decision", "update", "risk", "action", "plan", "evidence", "fact", "opinion", "waffle"];
 const OPEN_STATUS_TYPES = new Set(["question", "risk", "action"]);
 // leads_to is the general "one thought followed from another" flow — the
 // default connective tissue of a thinking session. supports/contradicts/causes
@@ -145,11 +145,12 @@ Analytical node types (real substance worth mapping):
 - topic: introduces, names, or frames a subject/section of the discussion — especially useful when the speaker announces something like "we have two ideas" or "let's talk about X" before getting into specifics. A topic is a natural PARENT for the ideas/questions/risks that follow under it.
 - idea: a proposal, suggestion, or possibility raised — a SINGLE conceptual suggestion. If the speaker lays out multiple steps or a concrete forward path toward a goal ("we should do X, then Y, to get to Z"), that's plan, not idea — see plan below and its worked example. When in doubt: one proposed thing = idea, a direction with steps/a target = plan.
 - question: something raised but not yet answered
-- decision: a commitment being MADE right now — a choice the group or person is settling on going forward ("let's ship Friday", "we'll use Postgres"). If it's reporting that something already happened or already got fixed, it's evidence, not a decision — see the worked example below.
+- decision: a commitment being MADE right now — a choice the group or person is settling on going forward ("let's ship Friday", "we'll use Postgres"). If it's reporting that something already happened or already got changed/fixed, it's update (or evidence), not a decision — see the worked example below.
+- update: a report that something has recently been changed, fixed, added, removed, or otherwise updated — about the system, project, or plan being discussed itself ("we recently changed T1 classification", "the login bug is fixed now", "we updated the pricing page"). This is a status report of a CHANGE, logged on its own — not a live commitment (that's decision) and not a fact whose job is to back up some OTHER claim/decision/risk/question elsewhere in the map (that's evidence). If in doubt between update and evidence: is this being used to prove/resolve some OTHER node? → evidence. Is it just reporting the change itself, with nothing else it's proving? → update.
 - risk: a concern, blocker, or potential problem
 - action: a task or follow-up, with an owner if known
 - plan: a multi-step forward-looking goal or strategy — broader than a single action (one task) and more concrete/goal-oriented than a topic (which just frames a subject). Use plan when the speaker lays out a direction with several steps or a target to work toward ("get token cost down to 10 cents per 6 minutes via batching and dedup"), not for a single one-off task (that's action) or a bare subject header (that's topic). Individual actions/ideas that serve the plan attach under it.
-- evidence: a stated, objective, verifiable fact or data point being used to support, refute, or resolve a specific claim/decision/risk/question elsewhere in the map — including a status report of something already done, fixed, working, or resolved ("the login bug is fixed now", "we're getting real-time data now"). These are facts about the current state, not a decision being made in the moment. Evidence always has a clear parent it's backing up — see fact below for a data point that ISN'T backing anything up.
+- evidence: a stated, objective, verifiable fact or data point being used to support, refute, or resolve a specific claim/decision/risk/question elsewhere in the map. These are facts about the current state, not a decision being made in the moment. Evidence always has a clear parent it's backing up — see fact below for a data point that ISN'T backing anything up, and update above for a status report about a CHANGE that isn't backing anything else up either.
 - fact: a standalone verifiable data point or piece of background info mentioned in passing, with no argumentative role — it isn't supporting, refuting, or resolving anything else in the map, it's just a fact stated for context (a date, a starting number, a name, background info). If the same data point later gets USED to support/refute/resolve something, that later use is evidence (or the fact node's parent connection should reflect it being used that way) — see the worked example below.
 - opinion: a subjective view, preference, judgment, or reaction — distinct from evidence, which is verifiable. "I think X is better" is opinion; "X shipped in March" is evidence.
 
@@ -298,12 +299,18 @@ Example: plan vs. idea — the other boundary plan gets confused with (a real mi
 Utterance: "What I want to do is set up the database first, then wire up auth, and once that's solid, start on the actual board UI."
 Correct: new, type=plan, title="Sequence: database, then auth, then board UI", parent=whatever topic prompted it. NOT type=idea — this isn't a single proposal, it's a multi-step direction toward a goal (three named steps in sequence). A same-subject utterance like "maybe we set up the database first" with no further steps/target IS just an idea — the test is whether there's a sequence/target, not just a proposal being made.
 
-Example: decision vs. evidence — a status report is NOT a decision.
+Example: decision vs. update — a status report is NOT a decision.
 Utterance: "So we've fixed two issues from before — the meeting bot wasn't joining, that's fixed now, and we've also changed the avatar so it shows when it's listening."
-Correct decisions (all evidence, not decision):
-1. new, type=evidence, title="Bot-not-joining issue fixed", relation/parent per context
-2. new, type=evidence, title="Avatar now shows listening state", relation/parent per context
-Why evidence, not decision: nothing is being decided here — the speaker is reporting completed work as a fact. Reserve "decision" for a live commitment ("let's fix the joining bug by switching providers"), not a recap of what already got done.
+Correct decisions (all update, not decision):
+1. new, type=update, title="Bot-not-joining issue fixed", relation/parent per context
+2. new, type=update, title="Avatar now shows listening state", relation/parent per context
+Why update, not decision: nothing is being decided here — the speaker is reporting completed work/changes. Reserve "decision" for a live commitment ("let's fix the joining bug by switching providers"), not a recap of what already got done — that's update (or evidence specifically, if it's being used to back up some OTHER claim/decision/risk/question rather than just being logged on its own).
+
+Example: "update" node type, and not letting a nearby node absorb it — a real production case (T1 T2 Changes Test session).
+Existing node: id=n1 action "System connectivity test" (the session's opening node, already finalized).
+Utterance: "We made some changes on T1 classification and T2 classification. However, there was no node that appeared for that, which is odd."
+WRONG (what actually happened, before "update" existed as a type): this got "expand"-folded into n1's summary — an unrelated "testing connectivity" node — repeating the umbrella-absorption pattern from the example above, just with the session's opening node acting as the umbrella instead of a topic node. The speaker then had to point out live that no node appeared for it.
+Correct: TWO decisions — (1) new, type=update, title="Changed T1 and T2 classification", summarizing what was reported changed, parent=n1 or independent (whichever fits — this is a genuinely new, specific, nameable statement, not a detail about connectivity testing); (2) new, type=risk (or evidence), title="No node appeared for the T1/T2 change report", capturing the bug being observed live as its own distinct point. A report of a specific change is exactly the kind of new, distinct content the enumeration and OVER-EXPANDING rules already call for — "update" now gives it an unambiguous type so it isn't left to drift into whatever node happens to be open.
 
 Example: a trailing "we should also" is usually a continuation, not an independent branch.
 Existing nodes: id=t1 topic "Fixing today's bugs", id=e1 evidence "Real-time transcripts now working" (parent t1).

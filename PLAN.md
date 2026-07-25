@@ -587,3 +587,22 @@ User report on "Demo Session": a node briefly appeared for "we're using Gemini 3
 **Verified live via `base44 exec`**, both reconstructed from the exact real data:
 - Recreated the umbrella node + the Tier-1-Gemini provisional guess + the exact real utterance text — `process-session` now finalizes the provisional into its own child node ("Tier 1 model: Gemini 3.5 Flash", parented to the umbrella node) instead of folding it away.
 - Recreated the exact real parent/child pair (umbrella + "Tier 2 classification using Gemini Flash 3.5") and ran `consolidate-session` — result: `{"merged":0}`, both nodes intact with their distinct content, confirming the code-level guard holds even independent of model judgment.
+
+---
+
+## 16. New "Update" node type (2026-07-25)
+
+User feedback on "T1 T2 Changes Test": said "we made changes on T1 classification and T2 classification" twice, live, and no node ever appeared for it — the user then proposed, live in the transcript, adding a dedicated "Update" node type for exactly this kind of statement. Pulled the real session's op log (same temporary inspection pattern as §15, deployed and deleted after use) to see the actual mechanism before implementing.
+
+**Root cause, precisely identified**: the session's opening node ("System connectivity test") acted as a catch-all — five separate follow-up utterances, including the "we made changes on T1/T2 classification" report, all got `"expand"`-folded into its summary instead of becoming their own nodes. Same failure family as §15's umbrella-node bug, just with the session's first node playing the umbrella role instead of a topic node.
+
+**Added `update` as a new first-class node type** — a report that something was recently changed/fixed/added/updated, logged on its own (distinct from `decision`, a live commitment; and from `evidence`, whose job is specifically to back up some OTHER node). Wired through every layer:
+- `base44/entities/node.jsonc` — added to the `type` enum.
+- `process-session/entry.ts` (Tier 1) — added to `NODE_TYPES`, given its own definition in `TIER1_SYSTEM`, the `evidence` definition trimmed of its now-redundant "status report" clause, the decision-vs-status-report worked example updated to use `update`, and a new worked example added grounded in the exact real utterance from this session.
+- `classify-partial/entry.ts` (Stage 2 live guess) — added to `NODE_TYPES` and the type list in its prompt.
+- `src/components/NodeCard.jsx` — new `NODE_TYPE_STYLES.update` entry (label "Update"); every other node-styled surface (`SearchPage.jsx`, `NodeDetailPanel.jsx`) reads from this one map, so no other frontend file needed a change.
+- `tailwind.config.js` — new `note.azure` pastel (cool blue, distinct from `sky`/decision and `lavender`/idea).
+
+**Verified via `base44 exec`**: recreated the exact real root node + the exact real utterance text that got swallowed, ran it through the live deployed `process-session` — now produces a standalone `update` node ("T1 and T2 classification changes reported") plus a separate `risk` node for the bug itself, instead of both being absorbed into the root node's summary. `npm run build` confirmed the new Tailwind color and NodeCard styling compile cleanly.
+
+**Not verified in-browser**: no live microphone session was available in this environment to see the new post-it color/label rendered on an actual board — verification was via the exact backend reproduction above.

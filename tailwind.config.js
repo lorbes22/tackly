@@ -45,6 +45,7 @@ export default {
           teal: { DEFAULT: '#D6EEEB', edge: '#8FC9C2' }, // topic
           sage: { DEFAULT: '#E3EAE0', edge: '#A9BFA0' }, // fact — neutral background info, distinct from evidence's mint
           plum: { DEFAULT: '#EAD9F0', edge: '#C48FD9' }, // plan
+          azure: { DEFAULT: '#E1E9FB', edge: '#A8BEEA' }, // update — cool blue, distinct from sky's decision and lavender's idea
         },
         // shadcn/ui semantic mapping (CSS vars set in index.css)
         background: 'hsl(var(--background))',

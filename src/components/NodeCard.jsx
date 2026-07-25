@@ -25,6 +25,10 @@ export const NODE_TYPE_STYLES = {
   // Action (one task), more concrete than a Topic (which just frames a
   // subject). Individual actions can attach under a plan.
   plan: { fill: "bg-note-plum", label: "Plan" },
+  // Update: a report that something was recently changed, fixed, added, or
+  // otherwise updated — distinct from Evidence (backs up some OTHER claim)
+  // and Decision (a live commitment being made right now).
+  update: { fill: "bg-note-azure", label: "Update" },
   // Waffle (small talk with some content) recedes: muted fill + slightly
   // transparent so it doesn't compete with the analytical nodes
   waffle: { fill: "bg-note-gray", label: "🧇 Waffle", muted: true },
