@@ -545,6 +545,13 @@ export default function Board() {
   const formingIdRef = useRef(null);
   const partialTextRef = useRef("");
   const stage2TimerRef = useRef(null);
+  // Stage 2 fires at most ONCE per forming node, not on every debounce tick —
+  // repeatedly re-guessing while someone was still mid-sentence was both
+  // wasted spend (classify-partial calls that got overwritten moments later)
+  // and visibly janky (the type/title kept changing 2-3x before Tier 1 ever
+  // finalized it). One rough guess is enough to settle the card; Tier 1 is
+  // authoritative regardless (PLAN.md).
+  const stage2FiredRef = useRef(false);
   const [settledIds, setSettledIds] = useState(() => new Set());
 
   const handleMicPartial = useCallback(
@@ -555,6 +562,7 @@ export default function Board() {
 
       if (!formingIdRef.current) {
         formingIdRef.current = "pending"; // guard against a create race
+        stage2FiredRef.current = false;
         (async () => {
           try {
             const node = await Node.create({
@@ -582,11 +590,14 @@ export default function Board() {
         );
       }
 
-      // Stage 2: debounced rough guess
+      // Stage 2: one debounced rough guess per forming node (not repeated on
+      // every tick — see stage2FiredRef above).
       clearTimeout(stage2TimerRef.current);
+      if (stage2FiredRef.current) return;
       stage2TimerRef.current = setTimeout(async () => {
         const id = formingIdRef.current;
-        if (!id || id === "pending" || settledIds.has(id)) return;
+        if (!id || id === "pending" || settledIds.has(id) || stage2FiredRef.current) return;
+        stage2FiredRef.current = true;
         try {
           const res = await base44.functions.invoke("classify-partial", {
             session_id: sessionId,
@@ -612,6 +623,7 @@ export default function Board() {
           ? formingIdRef.current
           : null;
       formingIdRef.current = null;
+      stage2FiredRef.current = false;
       try {
         const utt = await Utterance.create({
           session_id: sessionId,

@@ -268,6 +268,14 @@ Utterances in sequence: "And by default, obviously it shows us like it updates d
 WRONG (what actually happened): each fragment became its own orphan waffle node with an empty summary and no parent — clutter, not content. These are pause-interrupted pieces of ONE explanation of default/scroll behavior, and the real idea they were building toward ("add scrolling to the floating transcript, most recent at the bottom") was ALREADY captured as its own proper idea node nearby.
 Correct: SKIP all three fragments. None of them carries content beyond what the nearby real node already captures — that's the "would the summary be empty?" test above. Don't waffle a fragment just because words were spoken; waffle is for a genuine standalone aside with its own content, not for connective scaffolding around content captured elsewhere.
 
+Example: OVER-EXPANDING — two distinct facts squashed into one node, a real bug found in production testing (GPT - Testing Tackly session). This is the opposite failure from REFINEMENT above, and just as damaging.
+Utterance: "One thing I can confirm about Tackly is that the core functionality does work and the LLMs are connected and rendering T1 and T2 classification."
+WRONG (what actually happened): "expand" was used to fold this into an existing evidence node, producing one node titled "Core functionality and LLMs are working" that mashes two separate claims together.
+Correct: this states TWO distinct, independently-checkable facts — (1) core functionality works, (2) the LLMs are connected and rendering T1/T2 — so it's two new evidence nodes, both connected to whatever prompted the status check, not one merged node. The REFINEMENT rule (expand) is for the SAME fact getting corrected or updated with a newer value — it is NOT a license to fold every fact mentioned near an existing node into that node's summary. Ask: is this the value on the existing node changing, or a DIFFERENT thing being confirmed alongside it? Different thing → new, connected — same enumeration rule that applies to ideas/questions applies just as much to facts and evidence.
+
+Example: a live guess is not a reason to skip creating a node.
+Some utterances arrive already annotated "(already showing on the board as a live guess: <type> — "<title>")" — this means a rough guess already rendered for that utterance while it was still being spoken, and the person watching the board can currently see it. If the utterance has real, distinct content of its own, prefer "new" and let that content stand on its own connected node — even when it's closely related to an existing node — rather than "expand"-ing it into that other node's summary. A node that appears and then vanishes moments later (because "new" wasn't chosen) reads as broken, not as tidy. This isn't a license to keep something that's genuinely filler — SKIP is still correct for true filler regardless of what was guessed — it only means: don't fold real, distinct content into an existing node's summary just because a related node happens to already exist. If it later turns out to be redundant, a separate consolidation pass reconciles that — your job right now is to judge the content, not to pre-empt cleanup.
+
 Example: plan vs. topic vs. action.
 Utterance: "I need to figure out how to make this as cheap as possible — get token cost down to 10 cents per 6 minutes through batching and deduping restated facts."
 Correct: new, type=plan, title="Cut token cost to 10¢/6min via batching + dedup", parent=whatever cost topic/risk prompted it. NOT type=topic (this isn't just framing a subject, it's a concrete forward-looking goal with named steps) and NOT type=action (it's bigger than one task — batching and dedup are two separate actions that could each attach under this plan node later).
@@ -311,8 +319,9 @@ WRONG: parenting q3 to q1 or q2 just because they were emitted in the same respo
 function buildUserPrompt(
   sessionType: string,
   openList: { id: string; type: string; title: string; summary: string }[],
-  batch: { speaker_label?: string; text: string }[],
+  batch: { id: string; speaker_label?: string; text: string }[],
   context: { speaker_label?: string; text: string }[],
+  provisionalGuesses: Record<string, { type: string; title: string }>,
 ) {
   const nodesBlock = openList.length
     ? JSON.stringify(openList, null, 1)
@@ -321,7 +330,13 @@ function buildUserPrompt(
     ? context.map((u) => `[${u.speaker_label || "Speaker"}]: ${u.text}`).join("\n")
     : "none";
   const utterancesBlock = batch
-    .map((u, i) => `${i}. [${u.speaker_label || "Speaker"}]: ${u.text}`)
+    .map((u, i) => {
+      const guess = provisionalGuesses[u.id];
+      const guessNote = guess
+        ? ` (already showing on the board as a live guess: ${guess.type} — "${guess.title}")`
+        : "";
+      return `${i}. [${u.speaker_label || "Speaker"}]: ${u.text}${guessNote}`;
+    })
     .join("\n");
 
   return `Session mode: ${sessionType === "meeting" ? "meeting" : "personal"}
@@ -556,6 +571,19 @@ Deno.serve(async (req) => {
       classifyIdx.push(i);
     }
 
+    // Let the model see what's already showing on the board for utterances
+    // that have a live Stage-2 guess (only real analytical/waffle guesses —
+    // a still-raw "waffle" placeholder from Stage 1 alone isn't a meaningful
+    // guess worth mentioning) — so it can weigh "this is already visible"
+    // when choosing new vs. expand, instead of flying blind on that (PLAN.md).
+    const provisionalGuesses: Record<string, { type: string; title: string }> = {};
+    for (const [uttId, provId] of Object.entries(provisionalMap)) {
+      const provNode = existingNodes.find((n) => n.id === provId);
+      if (provNode && provNode.type !== "waffle") {
+        provisionalGuesses[uttId] = { type: provNode.type, title: provNode.title };
+      }
+    }
+
     let result: { decisions?: Record<string, unknown>[] } = { decisions: [] };
     if (classifyBatch.length) {
       try {
@@ -567,7 +595,7 @@ Deno.serve(async (req) => {
           tier: "t1",
           defaultModel: TIER1_MODEL,
           system: TIER1_SYSTEM,
-          user: buildUserPrompt(session.type, openList, classifyBatch, contextUtts),
+          user: buildUserPrompt(session.type, openList, classifyBatch, contextUtts, provisionalGuesses),
           tool: CLASSIFY_TOOL,
         });
         result = data;
