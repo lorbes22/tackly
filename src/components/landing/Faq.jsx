@@ -19,6 +19,10 @@ const FAQS = [
     a: "Yes — export any board as a PNG, an SVG, or Markdown you can hand straight to an AI assistant.",
   },
   {
+    q: "What's the AI Assistant?",
+    a: "A chat scoped to one board at a time — ask things like \"what was the main action?\" or \"what risks came up?\" and get answers grounded only in that thread's own nodes and transcript, never anything else. It's free on every plan, and nothing about the conversation is stored — leave the board and it's gone.",
+  },
+  {
     q: "What does it cost?",
     a: "Tackly's free while it's being built. Paid plans are on the way for heavier use, but nothing changes underfoot without notice.",
   },

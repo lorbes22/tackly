@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { HeroNodePopups } from "@/components/landing/HeroNodePopups";
 import { ScrollRevealText } from "@/components/landing/ScrollRevealText";
+import { TacklyAIPreview } from "@/components/landing/TacklyAIPreview";
 import { Faq } from "@/components/landing/Faq";
 import { SiteFooter } from "@/components/landing/SiteFooter";
 import { PlatformIconRow } from "@/components/PlatformIcons";
@@ -147,7 +148,7 @@ export default function Landing() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-periwinkle-tint">
                   <Sparkles className="h-5 w-5 text-periwinkle-deep" />
                 </div>
-                <p className="font-display text-xl font-bold text-ink">TacklyAI</p>
+                <p className="font-display text-xl font-bold text-ink">AI Assistant</p>
                 <span className="rounded-full border-2 border-ink bg-note-mint px-2.5 py-0.5 text-xs font-bold text-ink">
                   On every plan
                 </span>
@@ -159,27 +160,7 @@ export default function Landing() {
               </p>
             </div>
 
-            <div className="overflow-hidden rounded-xl border-2 border-ink bg-paper shadow-brutal-sm">
-              <div className="flex items-center gap-1.5 border-b border-line px-3 py-2">
-                <Sparkles className="h-3.5 w-3.5 text-periwinkle-deep" />
-                <span className="font-display text-sm font-bold text-ink">TacklyAI</span>
-                <span className="text-xs text-ink-faint">— Sunday brain dump</span>
-              </div>
-              <div className="space-y-2 px-3 py-4">
-                <div
-                  className="ml-auto w-fit max-w-[85%] animate-fade-up rounded-xl bg-periwinkle px-3 py-2 text-sm text-white"
-                  style={{ animationDelay: "150ms" }}
-                >
-                  Can I speak with my thoughts?
-                </div>
-                <div
-                  className="w-fit max-w-[85%] animate-fade-up rounded-xl bg-paper-sunken px-3 py-2 text-sm text-ink"
-                  style={{ animationDelay: "550ms" }}
-                >
-                  That's my whole job — I already read this entire board before you finished typing. ⚡ Ask away.
-                </div>
-              </div>
-            </div>
+            <TacklyAIPreview />
           </div>
         </section>
 

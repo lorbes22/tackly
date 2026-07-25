@@ -25,6 +25,8 @@ import {
   Mic,
   PanelRightClose,
   PanelRightOpen,
+  Sparkles,
+  X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -56,6 +58,7 @@ export default function Board() {
   const [sizes, setSizes] = useState({});
   const seenNoteIdsRef = useRef(new Set());
   const [showTranscript, setShowTranscript] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [phase, setPhase] = useState(null); // null | "mapping" | "linking"
   // Brief "Tackled" confirmation right as mapping/linking finishes, instead
@@ -63,10 +66,11 @@ export default function Board() {
   const [justTackled, setJustTackled] = useState(false);
   const justTackledTimerRef = useRef(null);
   // One-time hint bubble shown above the "tackled" bar the first time this
-  // visit lands on an already-complete, non-continuable thread.
+  // visit lands on an already-complete, non-continuable thread — stays up
+  // until explicitly dismissed (no auto-timeout; was disappearing before
+  // people had a chance to read it).
   const [showDeadEndHint, setShowDeadEndHint] = useState(false);
   const deadEndHintShownRef = useRef(false);
-  const deadEndHintTimerRef = useRef(null);
   const [notFound, setNotFound] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [noteModalNodeId, setNoteModalNodeId] = useState(null);
@@ -456,10 +460,8 @@ export default function Board() {
     if (isDeadEnd && !deadEndHintShownRef.current) {
       deadEndHintShownRef.current = true;
       setShowDeadEndHint(true);
-      deadEndHintTimerRef.current = setTimeout(() => setShowDeadEndHint(false), 5000);
     }
   }, [isDeadEnd]);
-  useEffect(() => () => clearTimeout(deadEndHintTimerRef.current), []);
 
   // Fallback ops poll while live: applies any op not already seen (applyOp
   // dedups by id), so a dropped realtime event is caught — never a refetch.
@@ -981,6 +983,13 @@ export default function Board() {
               Tackled 👀
             </span>
           )}
+          <TacklyAIPanel
+            sessionId={sessionId}
+            sessionTitle={session?.title}
+            open={assistantOpen}
+            onOpenChange={setAssistantOpen}
+          />
+
           <button
             onClick={() => {
               setSelectedId(null);
@@ -996,8 +1005,6 @@ export default function Board() {
             )}
             <span className="hidden md:inline">Transcript</span>
           </button>
-
-          <TacklyAIPanel sessionId={sessionId} sessionTitle={session?.title} />
 
           <div className="relative">
             <button
@@ -1195,14 +1202,33 @@ export default function Board() {
         {isDeadEnd && (
           <>
             {showDeadEndHint && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-20 z-10 flex justify-center px-4">
-                <div className="max-w-sm rounded-xl border-2 border-ink bg-paper-raised px-3.5 py-2 text-center text-sm font-medium text-ink shadow-brutal-sm animate-fade-up">
-                  You can still add notes if you need to, otherwise create a new thread.
+              <div className="absolute inset-x-0 bottom-20 z-10 flex justify-center px-4">
+                <div className="flex max-w-md items-start gap-2 rounded-xl border-2 border-ink bg-paper-raised px-3.5 py-2 text-sm font-medium text-ink shadow-brutal-sm animate-fade-up">
+                  <span className="flex-1 text-center">
+                    You can still add notes if you need to, otherwise create a new thread or speak with your AI
+                    Assistant.
+                  </span>
+                  <button
+                    onClick={() => setShowDeadEndHint(false)}
+                    title="Dismiss"
+                    className="shrink-0 rounded-full p-0.5 text-ink-faint transition-colors hover:bg-paper-sunken hover:text-ink"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
             )}
-            <div className="pointer-events-none absolute inset-x-0 bottom-5 z-10 mx-auto flex h-12 w-fit items-center gap-2 rounded-xl border-2 border-ink bg-paper-sunken px-6 text-sm font-bold text-ink-soft shadow-brutal-sm">
-              This thread has been tackled 👀
+            <div className="absolute inset-x-0 bottom-5 z-10 mx-auto flex w-fit items-center gap-3">
+              <div className="flex h-12 items-center gap-2 rounded-xl border-2 border-ink bg-paper-sunken px-6 text-sm font-bold text-ink-soft shadow-brutal-sm">
+                This thread has been tackled 👀
+              </div>
+              <button
+                onClick={() => setAssistantOpen(true)}
+                className="flex h-12 items-center gap-2 rounded-xl border-2 border-ink bg-periwinkle px-5 text-sm font-bold text-white shadow-brutal-sm transition-transform hover:-translate-y-0.5"
+              >
+                <Sparkles className="h-4 w-4" />
+                AI Assistant
+              </button>
             </div>
           </>
         )}
