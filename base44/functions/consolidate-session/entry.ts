@@ -63,7 +63,7 @@ const TIER2_TOOL = {
 
 const TIER2_SYSTEM = `You are the consolidation engine for Tackly, a tool that maps spoken thought into nodes. You are given the full node map for one session. Your job:
 
-1. "merges" — find pairs that are the SAME thought captured twice (near-duplicates). For each, pick the better node to keep and write a merged 1-2 sentence summary. Only merge true duplicates of the same type — related-but-distinct thoughts stay separate.
+1. "merges" — find pairs that are the SAME thought captured twice (near-duplicates). For each, pick the better node to keep and write a merged 1-2 sentence summary. Only merge true duplicates of the same type — related-but-distinct thoughts stay separate. A node and its own parent (or child) are NEVER a valid merge pair — the tree already correctly shows that relationship as one thought building on another, not the same thought said twice; merging them destroys a structure that was already right. Two sibling facts under the same parent that happen to be shaped the same way (e.g. two nodes each naming which model a different pipeline stage uses) are also usually related-but-distinct, not duplicates — merging them silently drops one of the two facts. A real production bug (Demo Session): a node stating "Tier 2 uses Gemini Flash 3.5" got merged into its own parent overview node, and the merged summary dropped the Tier 2 fact entirely and mislabeled what remained as being about Tier 1 only. When two nodes are related but each carries its own distinct, specific content, leave them connected via the tree/edges instead of merging — only merge when it's genuinely the SAME claim, just said twice.
 
 2. "edges" — propose meaningful connections:
 - "expands": A adds detail or builds on B
@@ -181,6 +181,7 @@ Deno.serve(async (req) => {
 
     // Apply merges first; remap or drop anything touching a removed node
     const removedTo = new Map<string, string>();
+    const parentOf = new Map(nodes.map((n) => [n.id, n.parent_id || null]));
     let merged = 0;
     for (const m of result?.merges ?? []) {
       if (
@@ -188,7 +189,15 @@ Deno.serve(async (req) => {
         !nodeIds.has(m.remove_id) ||
         m.keep_id === m.remove_id ||
         removedTo.has(m.keep_id) ||
-        removedTo.has(m.remove_id)
+        removedTo.has(m.remove_id) ||
+        // A node and its own parent/child are already correctly connected by
+        // the tree — that's "related, one builds on the other", not "same
+        // thought twice". Merging them would silently drop whichever side's
+        // distinct content isn't in the surviving summary (real incident:
+        // Demo Session, a "Tier 2 uses Gemini" child got merged into its own
+        // parent overview node and the Tier 2 fact vanished).
+        parentOf.get(m.keep_id) === m.remove_id ||
+        parentOf.get(m.remove_id) === m.keep_id
       ) {
         continue;
       }
