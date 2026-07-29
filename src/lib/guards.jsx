@@ -16,7 +16,11 @@ export function RequireAuth({ children }) {
   if (loading) return <FullPageLoader />;
   if (!user) {
     return (
-      <Navigate to="/login" state={{ returnTo: location.pathname }} replace />
+      <Navigate
+        to="/login"
+        state={{ returnTo: location.pathname + location.search }}
+        replace
+      />
     );
   }
   return children;

@@ -94,6 +94,26 @@ export const EMAIL_TEMPLATES: Record<string, Template> = {
       ),
     }),
   },
+  board_invite: {
+    name: "Board invite",
+    description: "Sent when someone invites another Tackly user to collaborate on a board.",
+    sampleData: {
+      inviter_email: "jono@tackly.co",
+      board_title: "Q3 planning",
+      invite_url: "https://tackly.co/app/board/abc123?invited=1",
+    },
+    render: (d) => ({
+      subject: `${d.inviter_email} invited you to "${d.board_title}"`,
+      html: layout(
+        `${d.inviter_email} invited you to collaborate on "${d.board_title}".`,
+        `<p style="margin:0 0 12px 0;"><strong>${d.inviter_email}</strong> just invited you to collaborate on their Tackly board:</p>
+         <p style="margin:0 0 16px 0;font-size:17px;font-weight:700;color:#26241F;">"${d.board_title}"</p>
+         <p style="margin:0 0 12px 0;">You'll be able to see it live, add your own thoughts, and pick up where they left off — same board, same map, together.</p>
+         ${button(d.invite_url, "Open the board")}
+         <p style="margin:16px 0 0 0;color:#6E6A61;font-size:13px;">If you don't already have a Tackly account, this link will get you set up first — same email as this one.</p>`
+      ),
+    }),
+  },
   plan_confirmation: {
     name: "Plan upgraded",
     description: "Sent after a successful Stripe checkout / plan change.",

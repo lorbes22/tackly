@@ -30,13 +30,20 @@
     "read": {
       "$or": [
         { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" },
         { "data.collaborator_email": "{{user.email}}" }
       ]
     },
-    "update": { "created_by": "{{user.email}}" },
+    "update": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    },
     "delete": {
       "$or": [
         { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" },
         { "data.collaborator_email": "{{user.email}}" }
       ]
     }

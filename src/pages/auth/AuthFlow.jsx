@@ -25,6 +25,17 @@ export default function AuthFlow() {
   const { refresh } = useAuth();
   const returnTo = location.state?.returnTo || "/app";
 
+  // If this login/signup was reached via a board-invite link (RequireAuth
+  // preserves the original path + query in returnTo), pull the inviter's
+  // board title back out to personalize the copy below.
+  const invite = (() => {
+    const qIndex = returnTo.indexOf("?");
+    if (qIndex === -1) return null;
+    const params = new URLSearchParams(returnTo.slice(qIndex));
+    if (params.get("invited") !== "1") return null;
+    return { title: params.get("title") || "" };
+  })();
+
   // email -> login | signup -> otp
   const [stage, setStage] = useState("email");
   const [email, setEmail] = useState("");
@@ -119,14 +130,30 @@ export default function AuthFlow() {
     );
   }
 
-  const title =
-    stage === "login" ? "Welcome back" : stage === "signup" ? "Create your account" : "Welcome to Tackly";
-  const subtitle =
-    stage === "login"
+  const title = invite
+    ? stage === "email"
+      ? "You've been invited 👀"
+      : stage === "login"
+        ? "Welcome back"
+        : "Create your account"
+    : stage === "login"
+      ? "Welcome back"
+      : stage === "signup"
+        ? "Create your account"
+        : "Welcome to Tackly";
+  const subtitle = invite
+    ? stage === "email"
+      ? `You've been invited to collaborate on "${invite.title || "a Tackly board"}". Enter your email to log in or create an account.`
+      : stage === "login"
+        ? `Log in to join "${invite.title || "the board"}".`
+        : stage === "signup"
+          ? `Create your account to join "${invite.title || "the board"}" — free to start.`
+          : ""
+    : stage === "login"
       ? "Pick up where your thinking left off."
       : stage === "signup"
-      ? "Free to start. Your first map is minutes away."
-      : "Enter your email to log in or create an account.";
+        ? "Free to start. Your first map is minutes away."
+        : "Enter your email to log in or create an account.";
 
   return (
     <AuthShell title={title} subtitle={subtitle}>
