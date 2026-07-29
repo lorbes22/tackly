@@ -34,6 +34,10 @@
   }
   html {
     @apply scroll-smooth;
+    /* Stops iOS/Android's rubber-band bounce-scroll from fighting the
+       board canvas's own custom pan/pinch handling on touch devices —
+       normal in-page scrolling elsewhere is unaffected. */
+    overscroll-behavior-y: none;
   }
   body {
     @apply bg-paper text-ink font-sans antialiased;

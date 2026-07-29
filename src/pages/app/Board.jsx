@@ -1174,7 +1174,7 @@ export default function Board() {
 
   if (notFound) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-paper">
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-paper">
         <p className="font-medium text-ink">This thread doesn't exist — or isn't yours.</p>
         <Link to="/app" className="text-sm font-medium text-periwinkle hover:text-periwinkle-deep">
           Back to your threads
@@ -1192,7 +1192,7 @@ export default function Board() {
   const panelOpen = Boolean(selectedNode) || showTranscript;
 
   return (
-    <div className="flex h-screen flex-col bg-paper">
+    <div className="flex h-dvh flex-col bg-paper">
       <header className="z-20 flex h-12 shrink-0 items-center justify-between border-b border-line bg-paper/90 px-3 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           <Link

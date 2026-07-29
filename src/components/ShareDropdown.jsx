@@ -125,14 +125,20 @@ export function ShareDropdown({ session, onSessionChange }) {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-ink-soft transition-colors hover:bg-paper-sunken hover:text-ink"
+        className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-ink-soft transition-colors hover:bg-paper-sunken hover:text-ink"
       >
-        <Share2 className="h-3.5 w-3.5" />
-        Add Collaborator / Share
+        <Share2 className="h-3.5 w-3.5 shrink-0" />
+        <span className="hidden sm:inline">Add Collaborator / Share</span>
+        <span className="sm:hidden">Share</span>
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-2 w-80 rounded-2xl border-2 border-ink bg-paper-raised p-4 shadow-brutal animate-fade-up">
+        // Fixed to the viewport's top-right rather than absolute-anchored to
+        // this button specifically — Share isn't the rightmost item in the
+        // header (AI Assistant/panel/export sit to its right), so an
+        // absolute right-0 anchor put a 320px panel mostly off-screen on
+        // narrow viewports where the button itself sits left-of-center.
+        <div className="fixed right-3 top-14 z-30 w-80 max-w-[calc(100vw-1.5rem)] rounded-2xl border-2 border-ink bg-paper-raised p-4 shadow-brutal animate-fade-up">
           <div>
             <div className="flex items-center gap-2 text-ink">
               <Users className="h-4 w-4" />

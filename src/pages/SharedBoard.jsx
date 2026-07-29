@@ -113,7 +113,7 @@ export default function SharedBoard() {
 
   if (error) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-paper px-4 text-center">
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-paper px-4 text-center">
         <p className="font-medium text-ink">{error}</p>
         <Link to="/" className="text-sm font-medium text-periwinkle hover:text-periwinkle-deep">
           Go to Tackly
@@ -131,7 +131,7 @@ export default function SharedBoard() {
   const panelOpen = Boolean(selectedNode) || showTranscript;
 
   return (
-    <div className="flex h-screen flex-col bg-paper">
+    <div className="flex h-dvh flex-col bg-paper">
       <header className="z-20 flex h-12 shrink-0 items-center justify-between border-b border-line bg-paper/90 px-3 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           <Logo to="/" />

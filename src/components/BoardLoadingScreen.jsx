@@ -5,7 +5,7 @@ import { LogoMark } from "@/components/Logo";
 // there's no color pop when the real content mounts a moment later.
 export function BoardLoadingScreen({ label = "Loading your board…" }) {
   return (
-    <div className="flex h-screen flex-col items-center justify-center gap-5 bg-paper">
+    <div className="flex h-dvh flex-col items-center justify-center gap-5 bg-paper">
       <LogoMark className="h-10 w-10 animate-pulse" />
       <div className="flex items-center gap-1.5">
         {[0, 1, 2].map((i) => (
