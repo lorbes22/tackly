@@ -12,7 +12,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // down to one finger resumes a plain pan from wherever that finger is.
 
 const MIN_SCALE = 0.4;
-const MAX_SCALE = 2;
+// fitToContent clamps its computed "best fit" scale against this same
+// ceiling — a sparse/small board (a handful of nodes bunched together)
+// could compute a fit scale well above 2, land exactly on the ceiling on
+// load, and leave zero headroom for the user to zoom in any further at all
+// (zoom out still had room to give, which is what made it look like only
+// the zoom-in button was broken). Raised well past any realistic fit scale
+// so the ceiling only ever limits deliberate user zooming, never the
+// initial fit itself.
+const MAX_SCALE = 4;
 const PAD = 400; // world-space padding around the content bbox
 
 export function usePanZoom({ viewportRef, contentBounds }) {
