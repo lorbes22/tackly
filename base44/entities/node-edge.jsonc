@@ -20,13 +20,32 @@
       "type": "boolean",
       "default": false,
       "description": "True when this edge links nodes from different sessions"
+    },
+    "owner_email": {
+      "type": "string",
+      "description": "Session owner's email — set explicitly on create so a collaborator's own writes (a different created_by) still reach the true owner's (and other collaborators') view. Same pattern as Node/Utterance."
     }
   },
   "required": ["from_node_id", "to_node_id", "relation"],
   "rls": {
     "create": { "created_by": "{{user.email}}" },
-    "read": { "created_by": "{{user.email}}" },
-    "update": { "created_by": "{{user.email}}" },
-    "delete": { "created_by": "{{user.email}}" }
+    "read": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    },
+    "update": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    },
+    "delete": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    }
   }
 }

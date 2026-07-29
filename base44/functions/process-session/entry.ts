@@ -721,6 +721,7 @@ Deno.serve(async (req) => {
           node = await base44.entities.Node.create({
             owner_user_id: user.id,
             session_id,
+            owner_email: session.owner_email || undefined,
             ...fields,
           });
           await appendOp("create_node", { node }, baseMs);
@@ -741,11 +742,12 @@ Deno.serve(async (req) => {
             to_node_id: node.id,
             relation,
             cross_session: false,
+            owner_email: session.owner_email || undefined,
           });
           await appendOp("create_edge", { edge }, baseMs);
           edgesCreated++;
         }
-        links.push({ node_id: node.id, utterance_id: utt.id });
+        links.push({ node_id: node.id, utterance_id: utt.id, owner_email: session.owner_email || undefined });
         events.push({
           user_id: user.id,
           event_type: "node_created",

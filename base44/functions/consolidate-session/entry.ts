@@ -276,6 +276,7 @@ Deno.serve(async (req) => {
         to_node_id: to,
         relation: e.relation,
         cross_session: false,
+        owner_email: session.owner_email || undefined,
       });
       await appendOp("create_edge", { edge });
       seenPairs.add(key);

@@ -84,6 +84,19 @@
       "default": 0,
       "minimum": 0,
       "description": "Running estimated Anthropic API cost (USD) for this session — Tier-1/Tier-2/partial-guess calls each add their own call's cost via $inc as they happen (see base44/shared/claude.ts estimateCostUsd). Estimated from real per-call token usage x published per-model pricing, not billed truth — good for relative comparisons and admin cost/min, not a guaranteed match to the Anthropic invoice."
+    },
+    "livestream_token": {
+      "type": "string",
+      "description": "Random per-session token minted the first time the owner asks for a 'watch live' link. Grants read-only viewer access via the share-access function ONLY while status is 'active' — the link stops working the moment the session ends, by design (no separate on/off toggle needed)."
+    },
+    "active_speaker_email": {
+      "type": "string",
+      "description": "Collaboration only: whose hold-to-talk currently has the mic on this session, so a second collaborator sees 'X is speaking right now' instead of both streaming utterances at once. Null when nobody currently holds it."
+    },
+    "active_speaker_claimed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When active_speaker_email last claimed the mic — used to auto-expire a stale claim if a client drops without releasing it (same crash-safety concern as the personal hold-to-talk billing cap)."
     }
   },
   "required": ["type", "title"],

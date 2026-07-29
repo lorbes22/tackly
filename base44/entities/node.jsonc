@@ -77,13 +77,32 @@
     "rotation_deg": {
       "type": "number",
       "description": "Random post-it rotation in degrees, assigned at creation"
+    },
+    "owner_email": {
+      "type": "string",
+      "description": "Session owner's email — set explicitly on create so a collaborator's own writes (a different created_by) still reach the true owner's (and other collaborators') view. Same pattern as Utterance/NodeNote/SessionOp."
     }
   },
   "required": ["session_id", "type", "title"],
   "rls": {
     "create": { "created_by": "{{user.email}}" },
-    "read": { "created_by": "{{user.email}}" },
-    "update": { "created_by": "{{user.email}}" },
-    "delete": { "created_by": "{{user.email}}" }
+    "read": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    },
+    "update": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    },
+    "delete": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    }
   }
 }

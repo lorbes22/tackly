@@ -1,0 +1,44 @@
+{
+  "name": "Collaborator",
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "The board this grants access to"
+    },
+    "owner_email": {
+      "type": "string",
+      "description": "Session owner's email — denormalized so a collaborator (who can't read the owner-only Session record directly) still knows whose board this is"
+    },
+    "collaborator_email": {
+      "type": "string",
+      "description": "Who's been invited. Must be an existing Tackly account to actually get in (checked by invite-collaborator), but the row is written either way — the invite email still goes out, and access resolves the moment they sign up under that same address."
+    },
+    "session_title": {
+      "type": "string",
+      "description": "Denormalized snapshot of the board's title at invite time, so the collaborator's 'Shared boards' list can render without needing owner-only Session access — best-effort, not kept live in sync with renames"
+    },
+    "invited_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the invite was sent"
+    }
+  },
+  "required": ["session_id", "owner_email", "collaborator_email"],
+  "rls": {
+    "create": { "created_by": "{{user.email}}" },
+    "read": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.collaborator_email": "{{user.email}}" }
+      ]
+    },
+    "update": { "created_by": "{{user.email}}" },
+    "delete": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.collaborator_email": "{{user.email}}" }
+      ]
+    }
+  }
+}

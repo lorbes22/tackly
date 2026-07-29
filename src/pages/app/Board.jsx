@@ -628,7 +628,11 @@ export default function Board() {
           try {
             const node = await Node.create({
               session_id: sessionId,
-              owner_email: user?.email,
+              // The session's real owner, not necessarily whoever is
+              // currently holding the mic — a collaborator's own email here
+              // would strand this node outside the owner's (and other
+              // collaborators') $or:[created_by, owner_email] read scope.
+              owner_email: session?.owner_email || user?.email,
               type: "waffle",
               title: t.slice(0, 90),
               summary: "",

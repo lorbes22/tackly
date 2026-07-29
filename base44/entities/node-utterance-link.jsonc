@@ -9,13 +9,32 @@
     "utterance_id": {
       "type": "string",
       "description": "Raw utterance that produced (part of) the node"
+    },
+    "owner_email": {
+      "type": "string",
+      "description": "Session owner's email — set explicitly on create so a collaborator's own link-writes still reach the true owner's view. Same pattern as Node/NodeEdge/Utterance."
     }
   },
   "required": ["node_id", "utterance_id"],
   "rls": {
     "create": { "created_by": "{{user.email}}" },
-    "read": { "created_by": "{{user.email}}" },
-    "update": { "created_by": "{{user.email}}" },
-    "delete": { "created_by": "{{user.email}}" }
+    "read": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    },
+    "update": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    },
+    "delete": {
+      "$or": [
+        { "created_by": "{{user.email}}" },
+        { "data.owner_email": "{{user.email}}" }
+      ]
+    }
   }
 }
