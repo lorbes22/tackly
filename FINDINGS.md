@@ -19,7 +19,7 @@
 
 ## 1. Cost audit — transcript-to-node pipeline (2026-07-24, rounds 1-6)
 
-Snapshot taken 2026-07-24, before any cost optimization work. Real usage testing showed roughly **$0.0667 per minute of session time**, and ending a solo session alone cost ~$0.07 (the "Linking ideas…" wrap-up step). This section is a factual record of exactly what the pipeline sent to which model, how often, round by round, so the reasoning isn't lost as the pipeline got cheaper. Current settings resulting from this work are summarized in [PLAN.md §9](PLAN.md#9-llm-cost--pipeline-economics).
+Snapshot taken 2026-07-24, before any cost optimization work. Real usage testing showed roughly **$0.0667 per minute of session time**, and ending a solo session alone cost ~$0.07 (the "Linking ideas…" wrap-up step). This section is a factual record of exactly what the pipeline sent to which model, how often, round by round, so the reasoning isn't lost as the pipeline got cheaper. Current settings resulting from this work are summarized in [PLAN.md §10](PLAN.md#10-llm-cost--pipeline-economics).
 
 ### The three LLM call sites (as of the 2026-07-24 snapshot)
 
@@ -92,7 +92,7 @@ Round 1 cut the dominant cost driver but a real 6-minute session still ran ~$0.0
 
 **Not changed, still open at this point:** Tier-2's node/edge payload remained unwindowed (full graph, up to 200 nodes/500 edges) — left as-is deliberately, since duplicate/cross-link detection benefits from seeing the whole graph regardless of recency, and Tier-2 was both cheaper (Haiku) and far less frequent (every 20 utterances + once at end) now than before Round 1, so the remaining savings from windowing it too would be smaller than what windowing Tier-1 bought.
 
-### Round 3 (same day, real 6-min session still ~$0.33 after rounds 1-2 — ~50 nodes, most of that likely fixed by the anti-fragmentation prompt tuning in PLAN.md §10 rather than further cost cuts)
+### Round 3 (same day, real 6-min session still ~$0.33 after rounds 1-2 — ~50 nodes, most of that likely fixed by the anti-fragmentation prompt tuning in PLAN.md §11 rather than further cost cuts)
 
 **Live Tier-1 batching, applied.** Every call still paid a fixed tool-use/system-prompt overhead (~500-600 tokens for Haiku with a forced tool choice, per Anthropic's own tool-use pricing docs) regardless of how little it classified — and until now, live capture fired one `process-session` call per finalized utterance. Client now queues finalized utterances (`Board.jsx`, `pendingQueueRef`/`queueForProcessing`/`flushQueue`) and flushes as ONE batched call after `BATCH_DEBOUNCE_MS = 2500` of no new utterance, or the instant the queue hits `BATCH_MAX_SIZE = 4` — whichever comes first, bounding added latency to a few seconds either way. Applies to both mic-live and bot-live paths (previously bot ingestion already received utterances in small arrays from the webhook/poll but still fired one call per utterance inside a `forEach` — now batched too). `endLiveSession` flushes the queue and awaits it before flipping session status, so nothing gets stranded read for the wrap-up pass.
 
@@ -177,7 +177,7 @@ None of these would have been caught by code review alone — each needed a real
 
 ## 4. Configurable per-tier LLM provider — activation log (2026-07-24)
 
-Architecture summary is in [PLAN.md §16](PLAN.md#16-configurable-per-tier-llm-provider). This section is the activation/incident history behind it.
+Architecture summary is in [PLAN.md §17](PLAN.md#17-configurable-per-tier-llm-provider). This section is the activation/incident history behind it.
 
 **Live activation:**
 - Secret confirmed as `GOOGLE_T1T2_SECRET` (not `GOOGLEI_T1T2_SECRET` — corrected after checking `npx base44 secrets list`).
@@ -208,7 +208,7 @@ This may just be an inherent adherence gap between a cheaper/smaller model and a
 
 ## 5. TacklyAI — build rounds & verification (2026-07-24 / 2026-07-25)
 
-Architecture summary is in [PLAN.md §17](PLAN.md#17-tacklyai--board-assistant). This section is the build/redesign history behind it.
+Architecture summary is in [PLAN.md §18](PLAN.md#18-tacklyai--board-assistant). This section is the build/redesign history behind it.
 
 **Initial build.** New `ask-tackly-ai` function — auth-gated, resolves the session via the caller's own RLS (a foreign session 404s, same as `process-session`'s pattern), pulls the session's visible (non-hidden, non-provisional) nodes as context, and answers via a forced tool call (`answer_question` → `{answer: string}`) — same reliable-structured-output approach as classification, just repurposed for free text. Reuses the T1/T2 provider infrastructure: `classifyForTier`'s `tier` type widened to `"t1" | "t2" | "chat"`, and the "LLM models" admin card got a third row for it — same test-before-activate Save & Test flow, same fallback-to-Haiku-if-unconfigured safety. The system prompt is entirely static (persona/instructions only) — all per-session board content and conversation history live in the USER message — so this tier's cache is never conflated across different users' different boards despite reusing the same caching machinery built for T1/T2. Live-activated on Gemini (`gemini-3.5-flash-lite` via `GOOGLE_T1T2_SECRET`, same as T1/T2), verified via `base44 exec` with a real Q&A round-trip against a scratch board — correct, grounded answer, cost tracked (~$0.0003/question).
 
@@ -322,7 +322,7 @@ User feedback on "T1 T2 Changes Test": said "we made changes on T1 classificatio
 
 **Root cause, precisely identified**: the session's opening node ("System connectivity test") acted as a catch-all — five separate follow-up utterances, including the "we made changes on T1/T2 classification" report, all got `"expand"`-folded into its summary instead of becoming their own nodes. Same failure family as Finding 9's umbrella-node bug, just with the session's first node playing the umbrella role instead of a topic node.
 
-**Added `update` as a new first-class node type** — see the taxonomy table in [PLAN.md §10](PLAN.md#10-node-taxonomy--classification-pipeline) for its definition. Wired through every layer:
+**Added `update` as a new first-class node type** — see the taxonomy table in [PLAN.md §11](PLAN.md#11-node-taxonomy--classification-pipeline) for its definition. Wired through every layer:
 - `base44/entities/node.jsonc` — added to the `type` enum.
 - `process-session/entry.ts` (Tier 1) — added to `NODE_TYPES`, given its own definition in `TIER1_SYSTEM`, the `evidence` definition trimmed of its now-redundant "status report" clause, the decision-vs-status-report worked example updated to use `update`, and a new worked example added grounded in the exact real utterance from this session.
 - `classify-partial/entry.ts` (Stage 2 live guess) — added to `NODE_TYPES` and the type list in its prompt.

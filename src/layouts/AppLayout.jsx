@@ -4,6 +4,7 @@ import { Logo } from "@/components/Logo";
 import { useAuth } from "@/lib/AuthContext";
 import { base44 } from "@/api/base44Client";
 import { OnboardingModal } from "@/components/OnboardingModal";
+import { QuotaWarningModal } from "@/components/QuotaWarningModal";
 import { LayoutGrid, LogOut, Plus, Search, Settings, Shield } from "lucide-react";
 
 function TopNavLink({ to, end, icon: Icon, label }) {
@@ -79,6 +80,7 @@ export default function AppLayout() {
       {showOnboarding && (
         <OnboardingModal waitlistMode={waitlistMode} onDone={dismissOnboarding} />
       )}
+      {!showOnboarding && <QuotaWarningModal />}
     </div>
   );
 }

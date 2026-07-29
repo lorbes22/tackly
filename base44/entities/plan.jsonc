@@ -21,7 +21,7 @@
     "allows_meetings": {
       "type": "boolean",
       "default": true,
-      "description": "Whether this plan can start/import meeting sessions at all (independent of minute quota) — the Free plan sets this false."
+      "description": "Whether this plan can start/import meeting sessions at all (independent of minute quota). Every plan, including Free, currently sets this true — meetings are gated by the shared minute quota, not plan tier."
     },
     "features": {
       "type": "array",

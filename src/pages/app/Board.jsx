@@ -12,6 +12,7 @@ import { AddNoteModal } from "@/components/AddNoteModal";
 import { MicBar, BotBar, LiveUtteranceFeed } from "@/components/LiveBars";
 import { TacklyAIPanel } from "@/components/TacklyAIPanel";
 import { RatingModal } from "@/components/RatingModal";
+import { QuotaWarningModal } from "@/components/QuotaWarningModal";
 import { usePanZoom } from "@/lib/usePanZoom";
 import { computeLayout } from "@/lib/treeLayout";
 import { boardToSvg, boardToMarkdown, exportPng, exportSvg, exportMarkdown } from "@/lib/boardExport";
@@ -1266,6 +1267,7 @@ export default function Board() {
             onClose={() => setNoteModalNodeId(null)}
           />
         )}
+        {!showRating && <QuotaWarningModal />}
 
         {/* Right panel: node detail wins over transcript */}
         <aside

@@ -3,18 +3,14 @@
 // pure function of sample or real data -> {subject, html}, so the same render path
 // backs both real sends and the admin preview page (admin-preview-email function).
 
-// Same mark as src/components/Logo.jsx's LogoMark, redrawn as a standalone
-// SVG (hardcoded hex colors — email clients can't see Tailwind) and inlined
-// as a data URI so the logo doesn't depend on a hosted asset URL.
-const LOGO_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32">' +
-  '<rect width="64" height="64" rx="16" fill="#6466E9"/>' +
-  '<g transform="rotate(-8 32 32)">' +
-  '<path d="M21,18 L43,18 A6,6 0 0 1 49,24 L49,28 A5,5 0 0 0 49,38 L49,42 A6,6 0 0 1 43,48 L21,48 A6,6 0 0 1 15,42 L15,24 A6,6 0 0 1 21,18 Z" fill="#FAF8F4"/>' +
-  '<rect x="20" y="25" width="22" height="3.4" rx="1.7" fill="#B9AEE8"/>' +
-  '<rect x="20" y="32.5" width="14" height="3.4" rx="1.7" fill="#B9AEE8"/>' +
-  '</g></svg>';
-const LOGO_DATA_URI = `data:image/svg+xml;base64,${btoa(LOGO_SVG)}`;
+// Same mark as src/components/Logo.jsx's LogoMark / public/favicon.svg.
+// Previously inlined as a base64 data URI specifically to avoid a hosted-
+// asset dependency — but that's exactly why it never rendered: Gmail and
+// most other webmail clients strip <img src="data:..."> entirely regardless
+// of image format, as a spam/tracking precaution. Referencing the already-
+// publicly-hosted file by absolute URL is the fix; it needs no data URI at
+// all since the asset is already served from the production domain.
+const LOGO_URL = "https://tackly.co/favicon.svg";
 
 function layout(previewText: string, bodyHtml: string): string {
   return `<!doctype html>
@@ -31,7 +27,7 @@ function layout(previewText: string, bodyHtml: string): string {
       <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#FFFFFF;border-radius:16px;overflow:hidden;border:1px solid #E8E4DC;">
         <tr><td style="padding:32px 32px 0 32px;">
           <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-            <td style="padding-right:9px;"><img src="${LOGO_DATA_URI}" width="32" height="32" alt="Tackly" style="display:block;border-radius:8px;"></td>
+            <td style="padding-right:9px;"><img src="${LOGO_URL}" width="32" height="32" alt="Tackly" style="display:block;border-radius:8px;"></td>
             <td style="font-size:21px;font-weight:800;letter-spacing:-0.01em;color:#26241F;">tackly</td>
           </tr></table>
         </td></tr>

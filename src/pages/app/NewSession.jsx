@@ -52,6 +52,11 @@ export default function NewSession() {
       session_type: sessionType,
     });
     if (!res.data.allowed) {
+      base44.entities.UsageEvent.create({
+        user_id: user?.id,
+        event_type: "paywall_shown",
+        meta: { session_type: sessionType, reason: res.data.reason, plan_name: res.data.plan_name },
+      }).catch(() => {});
       throw new Error(res.data.reason);
     }
   };

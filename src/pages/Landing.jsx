@@ -3,6 +3,7 @@ import { Logo } from "@/components/Logo";
 import { useAuth } from "@/lib/AuthContext";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { HeroNodePopups } from "@/components/landing/HeroNodePopups";
+import { Badges } from "@/components/landing/Badges";
 import { ScrollRevealText } from "@/components/landing/ScrollRevealText";
 import { TacklyAIPreview } from "@/components/landing/TacklyAIPreview";
 import { Faq } from "@/components/landing/Faq";
@@ -82,6 +83,7 @@ export default function Landing() {
           />
           <HeroNodePopups />
           <div className="relative z-10 mx-auto flex max-w-2xl flex-col items-center text-center">
+            <Badges />
             <span
               className="animate-fade-up rounded-full border-2 border-ink bg-paper-raised px-3.5 py-1 text-xs font-bold uppercase tracking-widest text-ink-soft shadow-brutal-sm"
             >

@@ -6,6 +6,34 @@
 
 Tackly turns spoken or typed thought — a meeting, a rambling voice note, or a solo brainstorm — into a living map of post-it-style nodes instead of a linear transcript. Built on the Base44 backend platform with a React frontend.
 
+## Base44 Backend Usage
+
+Base44 isn't just hosting — the app leans directly on nearly every part of the platform:
+
+| Base44 primitive | How Tackly uses it |
+|---|---|
+| **Entities** (16) | `Session`, `Utterance`, `Node`, `NodeEdge`, `NodeNote`, `SessionOp`, `User`, `Org`, `Plan`, `AppConfig`, `UsageEvent`, `SupportTicket`, `CalendarConnection`, `LlmConfig`, `Article` |
+| **Functions** (24 Deno serverless functions) | Ingestion (`recall-*`, `assemblyai-token`), classification (`process-session`, `consolidate-session`, `classify-partial`), billing (`stripe-webhook`, `create-checkout-session`, `create-billing-portal-session`, `check-quota`), the board assistant (`ask-tackly-ai`), auth (`check-email-exists`), email (`send-templated-email`), and a dozen `admin-*` management/telemetry functions |
+| **Auth** | Email OTP + Google OAuth, role-gated (`user`/`admin`) via `User.role` |
+| **Realtime** | `SessionOp` and `Session` subscriptions drive the entire live board — no polling for the primary path (a poll fallback exists for defense-in-depth, not as the main mechanism) |
+| **Row-Level Security (RLS)** | Three tiers used deliberately: owner-scoped (`Session`, `Node`, `Utterance`), admin-only (`LlmConfig`, article/plan writes), and public-read (`Plan`, published `Article`, `AppConfig`) |
+| **Secrets** | 9 Deno secrets (`ASSEMBLYAI_API_KEY`, `RECALL_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_T1T2_SECRET`, etc. — see Environment Secrets below) |
+| **CLI-driven dev loop** | `entities push`, `functions deploy`, `secrets set`, and `exec` (for scratch-data verification against production) are the primary workflow — no separate backend infra to provision or manage |
+
+The one deliberate opt-out: LLM calls (Tier 1/Tier 2/chat) bypass Base44's built-in `InvokeLLM`/AI Gateway in favor of direct Anthropic/Gemini calls — `InvokeLLM` has a fixed ~2s latency floor and no prompt-caching or forced-tool-use support, both of which the live classification pipeline depends on. See `PLAN.md` §5 and §17.
+
+## Hardest Backend Problems Solved
+
+- **Real-time delta architecture**: the board never re-fetches or re-renders wholesale. Tier 1/Tier 2 emit an append-only `SessionOp` log (`create_node` / `attach_node` / `create_edge` / `update_status`), delivered over Base44 realtime and applied as individual patches to in-memory canvas state. Utterance classification runs concurrently, but the commit step (writing the op, resolving "current most-recent node") stays strictly ordered so concurrent calls never parent off stale state.
+- **Dual ingestion normalization**: personal mic audio (AssemblyAI), meeting-bot audio (Recall), and pasted transcripts all converge into the same `Utterance` shape before Tier 1 ever runs — one classification pipeline serving three structurally different capture sources.
+- **Billing safety on AssemblyAI and Recall**: AssemblyAI bills for connection time, not speech time, so hold-to-talk opens a fresh connection per press and sends `Terminate` on release, backed by a hard server-side `max_session_duration_seconds` ceiling in case a client-side close never fires. Recall's bot-based billing is lower-risk by construction, but `automatic_leave` is still configured explicitly rather than left to defaults.
+- **Two-tier classification with different cost/latency profiles**: Tier 1 is a sub-second, per-utterance pass with a narrow context window; Tier 2 is a periodic, heavier consolidation pass over the whole graph — sharing one ops-log delivery mechanism despite very different latency budgets.
+- **Configurable multi-provider LLM routing**: an admin-editable `LlmConfig` entity plus a test-before-activate function (`admin-set-llm-config`) let Tier 1/Tier 2/chat each point at Anthropic or Gemini independently, re-read fresh on every call with no redeploy — and a failing test-call can never take down a tier that was already working.
+- **Webhook reliability under real-world conditions**: a Recall webhook silently 404ing because a Base44 function's internal dispatcher URL isn't public, and an uncaught signature-verification exception 500ing every delivery, were both found only through live meeting testing against actual function logs — not something code review alone surfaced.
+- **Cost per minute reduced from ~$0.0667/min → ~$0.03/min**: via Tier-2 frequency/model changes, `openList` windowing, a filler pre-filter, live-utterance batching, and real per-session cost tracking that didn't exist before any of this work started.
+
+Full write-ups for all of the above live in `PLAN.md` and `FINDINGS.md`.
+
 ## Repository Structure
 
 ```text

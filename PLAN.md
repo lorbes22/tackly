@@ -11,22 +11,23 @@
 
 1. [North Star & Scope](#1-north-star--scope)
 2. [Current Status (Shipped)](#2-current-status-shipped)
-3. [Recent Updates](#3-recent-updates)
-4. [Tech Stack & Setup](#4-tech-stack--setup)
-5. [Environment Secrets](#5-environment-secrets)
-6. [Dual Capture Pipelines](#6-dual-capture-pipelines-personal-vs-meetingtranscript)
-7. [Calendar Integration (Recall Calendar V1, Google only)](#7-calendar-integration-recall-calendar-v1-google-only)
-8. [Stripe Billing (checkout + webhook)](#8-stripe-billing-checkout--webhook)
-9. [LLM Cost & Pipeline Economics](#9-llm-cost--pipeline-economics)
-10. [Node Taxonomy & Classification Pipeline](#10-node-taxonomy--classification-pipeline)
-11. [Data Model](#11-data-model)
-12. [Pages & Flows](#12-pages--flows)
-13. [Design Direction](#13-design-direction)
-14. [Phased Build Plan](#14-phased-build-plan)
-15. [Open Questions](#15-open-questions)
-16. [Configurable Per-Tier LLM Provider](#16-configurable-per-tier-llm-provider)
-17. [TacklyAI — Board Assistant](#17-tacklyai--board-assistant)
-18. [Articles/Blog + SEO](#18-articlesblog--seo)
+3. [Base44 Usage & Hardest Backend Problems Solved](#3-base44-usage--hardest-backend-problems-solved)
+4. [Recent Updates](#4-recent-updates)
+5. [Tech Stack & Setup](#5-tech-stack--setup)
+6. [Environment Secrets](#6-environment-secrets)
+7. [Dual Capture Pipelines](#7-dual-capture-pipelines-personal-vs-meetingtranscript)
+8. [Calendar Integration (Recall Calendar V1, Google only)](#8-calendar-integration-recall-calendar-v1-google-only)
+9. [Stripe Billing (checkout + webhook)](#9-stripe-billing-checkout--webhook)
+10. [LLM Cost & Pipeline Economics](#10-llm-cost--pipeline-economics)
+11. [Node Taxonomy & Classification Pipeline](#11-node-taxonomy--classification-pipeline)
+12. [Data Model](#12-data-model)
+13. [Pages & Flows](#13-pages--flows)
+14. [Design Direction](#14-design-direction)
+15. [Phased Build Plan](#15-phased-build-plan)
+16. [Open Questions](#16-open-questions)
+17. [Configurable Per-Tier LLM Provider](#17-configurable-per-tier-llm-provider)
+18. [TacklyAI — Board Assistant](#18-tacklyai--board-assistant)
+19. [Articles/Blog + SEO](#19-articlesblog--seo)
 
 ---
 
@@ -62,23 +63,51 @@ The core experience is production-usable.
 
 ---
 
-## 3. Recent Updates
+## 3. Base44 Usage & Hardest Backend Problems Solved
 
-Newest first. Each links to the detailed investigation in [FINDINGS.md](FINDINGS.md) where one exists.
+### Base44 backend usage
 
-- **2026-07-25 — New "Update" node type.** A first-class node type for "we changed/fixed/added X" reports that were previously getting silently absorbed into an unrelated node's summary. See [§10](#10-node-taxonomy--classification-pipeline), [FINDINGS.md §10](FINDINGS.md#10-new-update-node-type-2026-07-25).
-- **2026-07-25 — Umbrella-node fact-folding (Tier 1) + parent/child merge (Tier 2) fixes.** A broad topic node was absorbing distinct new facts instead of spinning off children; separately, Tier 2 was merging an already-correct parent/child pair. Fixed with prompt rules plus a hard code-level guard against merging a node into its own parent/child. [FINDINGS.md §9](FINDINGS.md#9-umbrella-node-over-folding-tier-1--parent-merged-into-its-own-child-tier-2-2026-07-25).
-- **2026-07-25 — Trailing-clause bug fixed.** An utterance split mid-clause across two STT turns was losing its content on completion instead of expanding the right placeholder node. [FINDINGS.md §8](FINDINGS.md#8-trailing-clause-bug--a-plan-node-that-never-registered-2026-07-25).
-- **2026-07-25 — Live-classification feel: less flicker, fewer vanishing nodes, no more fact-squashing.** Stage-2 rough guesses now fire once per forming node instead of repeatedly; Tier 1 now prefers connecting distinct new content over folding it into an existing node. [FINDINGS.md §7](FINDINGS.md#7-live-classification-feel-flicker-vanishing-nodes-fact-squashing-2026-07-25).
-- **2026-07-25 — Articles/blog, footer + closing-CTA redesign, SEO polish.** New database-backed `Article` entity + admin editor, per-article SEO/JSON-LD, footer and closing-CTA redesign. See [§18](#18-articlesblog--seo), [FINDINGS.md §6](FINDINGS.md#6-articlesblog-footer--closing-cta-redesign-seo-polish-2026-07-25).
-- **2026-07-24/25 — TacklyAI board assistant shipped.** Session-scoped Q&A assistant, nothing persisted, live on Gemini. See [§17](#17-tacklyai--board-assistant), [FINDINGS.md §5](FINDINGS.md#5-tacklyai--build-rounds--verification-2026-07-24--2026-07-25).
-- **2026-07-24 — Configurable per-tier LLM provider.** Tier 1/Tier 2/chat can each be pointed at Anthropic or Gemini from Admin, no redeploy needed. See [§16](#16-configurable-per-tier-llm-provider), [FINDINGS.md §4](FINDINGS.md#4-configurable-per-tier-llm-provider--activation-log-2026-07-24).
-- **2026-07-24 — Mobile touch fixes + dynamic email-first auth.** Canvas panning fixed on touch, iOS input auto-zoom fixed globally, auth rebuilt as a single email-first flow. [FINDINGS.md §3](FINDINGS.md#3-mobile-touch-fixes--dynamic-email-first-auth-2026-07-24).
-- **2026-07-24 — Cost pipeline optimization, rounds 1-6.** Cut real session cost from ~$0.0667/min to ~3¢/min via Tier-2 frequency/model changes, `openList` windowing, a filler pre-filter, live Tier-1 batching, and cost tracking. See [§9](#9-llm-cost--pipeline-economics), [FINDINGS.md §1](FINDINGS.md#1-cost-audit--transcript-to-node-pipeline-2026-07-24-rounds-1-6).
+Base44 isn't just hosting — the app leans directly on nearly every part of the platform:
+
+- **Entities (16)**: `Session`, `Utterance`, `Node`, `NodeEdge`, `NodeNote`, `SessionOp`, `User`, `Org`, `Plan`, `AppConfig`, `UsageEvent`, `SupportTicket`, `CalendarConnection`, `LlmConfig`, `Article` — see §12 for the full schema.
+- **Functions (24 Deno serverless functions)**: ingestion (`recall-*`, `assemblyai-token`), classification (`process-session`, `consolidate-session`, `classify-partial`), billing (`stripe-webhook`, `create-checkout-session`, `create-billing-portal-session`, `check-quota`), the board assistant (`ask-tackly-ai`), auth (`check-email-exists`), email (`send-templated-email`), and a dozen `admin-*` management/telemetry functions.
+- **Auth**: email OTP + Google OAuth, role-gated (`user`/`admin`) via `User.role`.
+- **Realtime**: `SessionOp` and `Session` subscriptions drive the entire live board — realtime is the primary delivery mechanism, with a poll fallback as defense-in-depth, not the main path ([FINDINGS.md §2](FINDINGS.md#2-reliability-lessons-from-real-meeting-testing) covers why the fallback exists).
+- **Row-Level Security (RLS)**, used deliberately across three tiers: owner-scoped (`Session`, `Node`, `Utterance`), admin-only (`LlmConfig`, article/plan writes), and public-read (`Plan`, published `Article`, `AppConfig`).
+- **Secrets**: 9 Deno secrets (see §6).
+- **CLI-driven dev loop**: `entities push`, `functions deploy`, `secrets set`, and `exec` (for scratch-data verification directly against production — the verification method behind most of the fixes in FINDINGS.md) are the primary workflow, with no separate backend infra to provision or manage.
+
+The one deliberate opt-out: LLM calls (Tier 1/Tier 2/chat) bypass Base44's built-in `InvokeLLM`/AI Gateway in favor of direct Anthropic/Gemini calls — see §5 and §17 for why.
+
+### Hardest backend problems solved
+
+- **Real-time delta architecture**: the board never re-fetches or re-renders wholesale. Tier 1/Tier 2 emit an append-only `SessionOp` log (`create_node` / `attach_node` / `create_edge` / `update_status`), delivered over Base44 realtime and applied as individual patches to in-memory canvas state. Utterance classification runs concurrently, but the commit step (writing the op, resolving "current most-recent node") stays strictly ordered so concurrent calls never parent off stale state. Full mechanism in §11.
+- **Dual ingestion normalization**: personal mic audio (AssemblyAI), meeting-bot audio (Recall), and pasted transcripts all converge into the same `Utterance` shape before Tier 1 ever runs — one classification pipeline serving three structurally different capture sources. See §7.
+- **Billing safety on AssemblyAI and Recall**: AssemblyAI bills for connection time, not speech time, so hold-to-talk opens a fresh connection per press and sends `Terminate` on release, backed by a hard server-side `max_session_duration_seconds` ceiling in case a client-side close never fires. Recall's bot-based billing is lower-risk by construction, but `automatic_leave` is still configured explicitly rather than left to defaults. See §5's Billing Safety subsections.
+- **Two-tier classification with different cost/latency profiles**: Tier 1 is a sub-second, per-utterance pass with a narrow context window; Tier 2 is a periodic, heavier consolidation pass over the whole graph — sharing one ops-log delivery mechanism despite very different latency budgets. See §11.
+- **Configurable multi-provider LLM routing**: an admin-editable `LlmConfig` entity plus a test-before-activate function (`admin-set-llm-config`) let Tier 1/Tier 2/chat each point at Anthropic or Gemini independently, re-read fresh on every call with no redeploy — and a failing test-call can never take down a tier that was already working. See §17.
+- **Webhook reliability under real-world conditions**: a Recall webhook silently 404ing because a Base44 function's internal dispatcher URL isn't public, and an uncaught signature-verification exception 500ing every delivery, were both found only through live meeting testing against actual function logs — not something code review alone surfaced. See [FINDINGS.md §2](FINDINGS.md#2-reliability-lessons-from-real-meeting-testing).
+- **Cost per minute reduced from ~$0.0667/min → ~$0.03/min**: via Tier-2 frequency/model changes, `openList` windowing, a filler pre-filter, live-utterance batching, and real per-session cost tracking that didn't exist before any of this work started. Full round-by-round detail in §10 and [FINDINGS.md §1](FINDINGS.md#1-cost-audit--transcript-to-node-pipeline-2026-07-24-rounds-1-6).
 
 ---
 
-## 4. Tech Stack & Setup
+## 4. Recent Updates
+
+Newest first. Each links to the detailed investigation in [FINDINGS.md](FINDINGS.md) where one exists.
+
+- **2026-07-25 — New "Update" node type.** A first-class node type for "we changed/fixed/added X" reports that were previously getting silently absorbed into an unrelated node's summary. See [§11](#11-node-taxonomy--classification-pipeline), [FINDINGS.md §10](FINDINGS.md#10-new-update-node-type-2026-07-25).
+- **2026-07-25 — Umbrella-node fact-folding (Tier 1) + parent/child merge (Tier 2) fixes.** A broad topic node was absorbing distinct new facts instead of spinning off children; separately, Tier 2 was merging an already-correct parent/child pair. Fixed with prompt rules plus a hard code-level guard against merging a node into its own parent/child. [FINDINGS.md §9](FINDINGS.md#9-umbrella-node-over-folding-tier-1--parent-merged-into-its-own-child-tier-2-2026-07-25).
+- **2026-07-25 — Trailing-clause bug fixed.** An utterance split mid-clause across two STT turns was losing its content on completion instead of expanding the right placeholder node. [FINDINGS.md §8](FINDINGS.md#8-trailing-clause-bug--a-plan-node-that-never-registered-2026-07-25).
+- **2026-07-25 — Live-classification feel: less flicker, fewer vanishing nodes, no more fact-squashing.** Stage-2 rough guesses now fire once per forming node instead of repeatedly; Tier 1 now prefers connecting distinct new content over folding it into an existing node. [FINDINGS.md §7](FINDINGS.md#7-live-classification-feel-flicker-vanishing-nodes-fact-squashing-2026-07-25).
+- **2026-07-25 — Articles/blog, footer + closing-CTA redesign, SEO polish.** New database-backed `Article` entity + admin editor, per-article SEO/JSON-LD, footer and closing-CTA redesign. See [§19](#19-articlesblog--seo), [FINDINGS.md §6](FINDINGS.md#6-articlesblog-footer--closing-cta-redesign-seo-polish-2026-07-25).
+- **2026-07-24/25 — TacklyAI board assistant shipped.** Session-scoped Q&A assistant, nothing persisted, live on Gemini. See [§18](#18-tacklyai--board-assistant), [FINDINGS.md §5](FINDINGS.md#5-tacklyai--build-rounds--verification-2026-07-24--2026-07-25).
+- **2026-07-24 — Configurable per-tier LLM provider.** Tier 1/Tier 2/chat can each be pointed at Anthropic or Gemini from Admin, no redeploy needed. See [§17](#17-configurable-per-tier-llm-provider), [FINDINGS.md §4](FINDINGS.md#4-configurable-per-tier-llm-provider--activation-log-2026-07-24).
+- **2026-07-24 — Mobile touch fixes + dynamic email-first auth.** Canvas panning fixed on touch, iOS input auto-zoom fixed globally, auth rebuilt as a single email-first flow. [FINDINGS.md §3](FINDINGS.md#3-mobile-touch-fixes--dynamic-email-first-auth-2026-07-24).
+- **2026-07-24 — Cost pipeline optimization, rounds 1-6.** Cut real session cost from ~$0.0667/min to ~3¢/min via Tier-2 frequency/model changes, `openList` windowing, a filler pre-filter, live Tier-1 batching, and cost tracking. See [§10](#10-llm-cost--pipeline-economics), [FINDINGS.md §1](FINDINGS.md#1-cost-audit--transcript-to-node-pipeline-2026-07-24-rounds-1-6).
+
+---
+
+## 5. Tech Stack & Setup
 
 ### Core Stack
 
@@ -86,7 +115,7 @@ Newest first. Each links to the detailed investigation in [FINDINGS.md](FINDINGS
 |--------------------|---------------------------------------------|-------|
 | Backend            | Base44 (BaaS)                               | Entities, functions, auth, realtime, secrets, hosting |
 | Frontend           | React + Vite + Tailwind                     | Neubrutalist design system |
-| AI (Tier 1 & 2)    | Direct Anthropic + Google Gemini            | Not using Base44 `InvokeLLM` — see §16 |
+| AI (Tier 1 & 2)    | Direct Anthropic + Google Gemini            | Not using Base44 `InvokeLLM` — see §17 |
 | Personal STT       | AssemblyAI (`universal-streaming`)          | Official SDK |
 | Meeting capture    | Recall.ai                                   | Bot joins the call + streams transcript |
 | Payments           | Stripe                                      | Checkout + Customer Portal + webhooks |
@@ -96,7 +125,7 @@ Newest first. Each links to the detailed investigation in [FINDINGS.md](FINDINGS
 
 - **Backend**: Base44 backend platform. First step: `npx base44 create` to provision database, auth, functions, storage, realtime.
 - **Frontend**: web app built on top of the Base44-generated backend, plain routing for two areas — the main app (`/app/...`) and a role-gated admin area (`/admin/...`).
-- **Direct Anthropic / Gemini calls** instead of Base44 `InvokeLLM` — `InvokeLLM` has a fixed ~2 second floor and no model selection. Direct calls give sub-second Tier 1 latency, prompt caching, and don't consume Base44 integration credits (per Base44's own docs, integration credits are only charged for Base44's built-in services — calls made via your own API key don't touch that pool). Tier 1 (per-utterance classification) uses `claude-haiku-4-5-20251001` — fast, well-suited to a small, well-defined task. Tier 2 (periodic consolidation) currently uses Haiku as well, via a forced tool call (see §9 for why it moved off Sonnet+thinking). Prompt caching is used on every tier's system prompt since it's static across calls.
+- **Direct Anthropic / Gemini calls** instead of Base44 `InvokeLLM` — `InvokeLLM` has a fixed ~2 second floor and no model selection. Direct calls give sub-second Tier 1 latency, prompt caching, and don't consume Base44 integration credits (per Base44's own docs, integration credits are only charged for Base44's built-in services — calls made via your own API key don't touch that pool). Tier 1 (per-utterance classification) uses `claude-haiku-4-5-20251001` — fast, well-suited to a small, well-defined task. Tier 2 (periodic consolidation) currently uses Haiku as well, via a forced tool call (see §10 for why it moved off Sonnet+thinking). Prompt caching is used on every tier's system prompt since it's static across calls.
 - **AssemblyAI official SDK** (not raw WebSocket) — correctly handles session termination. Critical because AssemblyAI bills for connection time, not speech time.
 - **Recall.ai for meetings** — the bot is a real call participant with built-in transcription. No need to run a separate STT service on meeting audio.
 - Node matching is same-session only and runs directly off the small list of currently-open nodes in the LLM call — no embeddings or vector search needed.
@@ -135,7 +164,7 @@ npx base44 functions deploy  # Deploy backend serverless functions
 
 ---
 
-## 5. Environment Secrets
+## 6. Environment Secrets
 
 Set runtime backend keys via Base44 secrets — **never paste actual key values in chat or commit them.** This list is verified against `npx base44 secrets list` (not just grep'd from code), so it reflects what's actually configured in production:
 
@@ -153,14 +182,14 @@ npx base44 secrets set GOOGLE_CALENDER_CLIENT_ID=value
 
 Notes on the less obvious ones:
 - `RECALL_VERIF_SECRET` — single workspace verification secret (Recall dashboard → API keys page) that signs *all* Recall webhook deliveries — both the per-bot `realtime_endpoints` traffic (`recall-webhook`) and the dashboard-registered bot status webhook (`recall-status-webhook`). One secret, two consumers (`base44/shared/recallVerify.ts`).
-- `GOOGLE_T1T2_SECRET` — supports the configurable Tier 1 / Tier 2 / chat LLM provider setup (§16), alongside `ANTHROPIC_API_KEY`.
+- `GOOGLE_T1T2_SECRET` — supports the configurable Tier 1 / Tier 2 / chat LLM provider setup (§17), alongside `ANTHROPIC_API_KEY`.
 - `GOOGLE_CALENDER_CLIENT_ID` — **note the spelling**: the secret is actually stored as `GOOGLE_CALENDER_CLIENT_ID` (missing the "A"), and `recall-calendar-connect-url/entry.ts` reads it under that exact name deliberately, matching what's set in Base44 — not a typo to "fix," changing it would break the calendar connect flow. Only the client ID lives here; the OAuth client *secret* lives in Recall's own dashboard (uploaded there during Recall's setup steps, never touches our code) since Recall's callback does the code↔token exchange server-side.
 - `RESEND_API_KEY` — themed transactional emails (welcome, quota-warning, plan-upgraded), sent from `noreply@app.tackly.co`, separate from Base44's own un-customizable OTP/reset emails.
 - `RECALL_REGION` — optional, not currently set as a secret. Defaults to `"eu-central-1"` in code (`recall-start-bot`, `recall-stop-bot`, `recall-calendar-*`) if unset; only needs setting if the Recall API key's region ever changes.
 
 ---
 
-## 6. Dual Capture Pipelines (personal vs. meeting/transcript)
+## 7. Dual Capture Pipelines (personal vs. meeting/transcript)
 
 These share the Tier-1/Tier-2 classification pipeline and the ops-log realtime delivery, but capture works completely differently. Worth keeping straight — they are not the same code path with a flag, they're two separate ingestion routes that both happen to write `Utterance` rows.
 
@@ -171,7 +200,7 @@ These share the Tier-1/Tier-2 classification pipeline and the ops-log realtime d
 | Who transcribes | **AssemblyAI**, browser mic, streaming SDK | **Recall**, bot joins the call — Recall does its own transcription (`recallai_streaming` provider), we never touch AssemblyAI for this path | Nobody — text is pasted/uploaded already-transcribed (`src/lib/transcript.js` parses it) |
 | Ingestion | `useHoldToTalk.js` → `classify-partial` (provisional) → `process-session` (final), per hold-press | `recall-webhook` (`transcript.data` events) → `Utterance.create` per finalized chunk, service-role write | `NewSession.jsx` bulk-creates all utterances up front, then `process-session` batches through them |
 | Speaker labels | Always "Me" (one speaker) | Recall's diarization — `participant.name` if the platform provides it, else `Speaker <id>` — carried straight into `Utterance.speaker_label` | Whatever the pasted transcript's "Name:" prefixes say (`parseTranscript`) |
-| Realtime cadence | As fast as AssemblyAI finalizes a turn (sub-second, batched — see §9) | As fast as Recall's `recallai_streaming` finalizes a chunk and fires the webhook — same realtime, per-utterance shape as personal mode, not a batch/delay | N/A — all utterances exist immediately, `process-session` just churns through `IMPORT_BATCH_SIZE` (12) at a time |
+| Realtime cadence | As fast as AssemblyAI finalizes a turn (sub-second, batched — see §10) | As fast as Recall's `recallai_streaming` finalizes a chunk and fires the webhook — same realtime, per-utterance shape as personal mode, not a batch/delay | N/A — all utterances exist immediately, `process-session` just churns through `IMPORT_BATCH_SIZE` (12) at a time |
 | Hold-to-talk available? | Yes, the whole time | **No** — there's no browser mic session during a live meeting, Recall's bot is the only capture source while `status === "active"`. Once the bot has left (`status` flips off `active`), the board shows a **"Continue this thread by voice"** button that re-opens the same session for mic capture — same lifecycle a personal session uses, just re-entered instead of started fresh (`Board.jsx` `micContinuing`) | No live capture at all — the session goes straight to `processing` after the bulk-create |
 | How the session ends | User releases the hold key each turn; explicit "End session" flips `active → processing` | Three paths, in order of how often they fire: (1) **`participant_events.leave`** on the same automatic per-bot `realtime_endpoints` webhook (`recall-webhook`) — when the host leaves, the session auto-flips `active → processing`, the primary mechanism; (2) user clicks "End session" → `recall-stop-bot`, a manual override; (3) `recall-status-webhook` — a separate, project-wide webhook Recall calls on `bot.call_ended`/`bot.fatal`, requiring a one-time manual URL registration in Recall's dashboard — a defense-in-depth backstop, not load-bearing. The board also subscribes to `Session` realtime updates (plus a 3s poll fallback) while `isBotLive`. | Immediate — nothing to end |
 | Billing minutes | Utterance timestamp span (real AssemblyAI turn timings) | Utterance timestamp span (real Recall segment timings) | Utterance timestamp span (synthetic — `parseTranscript` assigns 1s/line, since pasted text has no real timing) |
@@ -180,7 +209,7 @@ These share the Tier-1/Tier-2 classification pipeline and the ops-log realtime d
 
 ---
 
-## 7. Calendar Integration (Recall Calendar V1, Google only)
+## 8. Calendar Integration (Recall Calendar V1, Google only)
 
 Lets a user connect their Google Calendar so Recall can send the bot automatically, instead of always pasting a meeting link by hand. Built against Recall's Calendar V1 docs (`docs.recall.ai/docs/calendar-v1-google-calendar`, region `eu-central-1`) — Microsoft Calendar is out of scope for now (only the Google OAuth client was created in Recall's dashboard).
 
@@ -200,7 +229,7 @@ Both are real, scoped pieces of work — flagging clearly rather than implying t
 
 ---
 
-## 8. Stripe Billing (checkout + webhook)
+## 9. Stripe Billing (checkout + webhook)
 
 Real subscriptions, replacing the admin-only manual plan assignment as the primary way users end up on a paid plan (manual assignment in `/admin/users` still works, unchanged).
 
@@ -221,7 +250,7 @@ Real subscriptions, replacing the admin-only manual plan assignment as the prima
 
 ---
 
-## 9. LLM Cost & Pipeline Economics
+## 10. LLM Cost & Pipeline Economics
 
 Real usage testing on 2026-07-24 showed the pipeline running at roughly **$0.0667 per minute of session time** — real work went into bringing that down. Full round-by-round investigation, the pricing tables used, and a real fire-and-forget cost-write bug found along the way are in [FINDINGS.md §1](FINDINGS.md#1-cost-audit--transcript-to-node-pipeline-2026-07-24-rounds-1-6). Current state:
 
@@ -234,7 +263,7 @@ Real usage testing on 2026-07-24 showed the pipeline running at roughly **$0.066
 - Tier 1's `openList` (the set of nodes offered as possible parents/attach targets) is windowed — every `topic` node + every still-open question/risk/action + the most recent `OPEN_LIST_RECENCY = 50` nodes — not the full unbounded graph. Tradeoff: a very old, already-resolved, non-topic node can age out and stop being offered as an attach target on a very long session; raise `OPEN_LIST_RECENCY` if that becomes a real problem rather than reverting the windowing.
 - A filler pre-filter (`FILLER_WORDS`/`isPureFiller`) drops pure acknowledgement utterances ("okay", "yeah", "got it") before they reach the model at all, since Tier 1 would just classify them as skip anyway.
 - Tier 2's node/edge payload is deliberately left **unwindowed** (full graph, up to 200 nodes/500 edges) — duplicate/cross-link detection benefits from seeing the whole graph regardless of recency, and Tier 2 is already both cheaper and far less frequent than before, so windowing it too would buy comparatively little.
-- Stage 2 (`classify-partial`) fires only once per forming node (`stage2FiredRef`), not on every debounce tick — see §10 for why.
+- Stage 2 (`classify-partial`) fires only once per forming node (`stage2FiredRef`), not on every debounce tick — see [FINDINGS.md §7](FINDINGS.md#7-live-classification-feel-flicker-vanishing-nodes-fact-squashing-2026-07-25) for why.
 
 **Cost tracking**: every Anthropic/Gemini call's real token usage is converted to an estimated $ cost (`estimateCostUsd` / `estimateGeminiCostUsd`) and accumulated onto `Session.llm_cost_usd`. `admin-session-stats` exposes `avg_cost_per_minute_usd` and `total_llm_cost_usd`, surfaced as an admin stat tile. This is an estimate for relative tracking (no volume/batch discounts accounted for) — don't expect it to match the Anthropic/Google invoice to the cent, and historical sessions from before this was built have no recorded cost.
 
@@ -242,7 +271,7 @@ Real usage testing on 2026-07-24 showed the pipeline running at roughly **$0.066
 
 ---
 
-## 10. Node Taxonomy & Classification Pipeline
+## 11. Node Taxonomy & Classification Pipeline
 
 ### Node types
 
@@ -300,7 +329,7 @@ Tier 1 needs a sliding window of the last 2-3 utterances as context, not just th
 
 A node forms in three stages, and it's the same node record the whole way through — update its fields in place, never delete-and-recreate, so position/connections/animations stay stable:
 1. **Instant raw-text placeholder, no LLM call.** The moment partial (non-final) transcript text exists, show it as-is in a dashed "forming" state.
-2. **A debounced rough guess** — once partial text is reasonably stable, one lightweight Haiku/Gemini call gives a rough type + title, still dashed. Fires **once per forming node** (not on every debounce tick — see §9). If this guess crosses a high confidence bar (~90%), settle it visually early rather than waiting on an arbitrary STT turn boundary.
+2. **A debounced rough guess** — once partial text is reasonably stable, one lightweight Haiku/Gemini call gives a rough type + title, still dashed. Fires **once per forming node** (not on every debounce tick — see [FINDINGS.md §7](FINDINGS.md#7-live-classification-feel-flicker-vanishing-nodes-fact-squashing-2026-07-25)). If this guess crosses a high confidence bar (~90%), settle it visually early rather than waiting on an arbitrary STT turn boundary.
 3. **Final classification on end_of_turn** — the full Tier 1 pass always runs regardless of whether stage 2 already settled it early; an early-confident guess is a UX head start, not a skip.
 
 Nodes support a manual position override (nullable `pos_x`/`pos_y`) — null means "use the tree auto-layout," set means "the person dragged this, respect it." Connector lines recalculate live off whatever the node's current position actually is.
@@ -311,7 +340,7 @@ Below a confidence threshold on any of these three choices, don't auto-place —
 
 This is the mechanism that makes the board feel alive as you speak — get this wrong and nodes appear to vanish or the whole board feels like it's re-rendering on every utterance instead of growing.
 
-- The moment Tier 1 finishes classifying one utterance (or one batch — see §9), it produces zero or more small discrete operations: `create_node`, `attach_node`, `create_edge`, `update_status`.
+- The moment Tier 1 finishes classifying one utterance (or one batch — see §10), it produces zero or more small discrete operations: `create_node`, `attach_node`, `create_edge`, `update_status`.
 - Each op gets appended to an ops log for that session with an incrementing sequence number, and pushed to the frontend via Base44 realtime the instant it's created.
 - The frontend applies each incoming op directly to its existing in-memory board state — it never re-fetches or regenerates the whole board. A full render only happens once, on initial page load (replay the session's ops in order).
 - Stored as its own append-only collection (`session_ops`), separate from the `nodes`/`node_edges` tables those ops describe — the log is the source of truth for "what happened and in what order," the tables are the current derived state.
@@ -323,63 +352,63 @@ If live Tier-1 placement isn't holding up reliably, batch-process the full trans
 
 ---
 
-## 11. Data Model
+## 12. Data Model
 
 - **users** — id, email, name, role (user / admin), org_id, plan_id, stripe_customer_id, stripe_subscription_id, created_at
 - **orgs** — id, name, plan_id, seats_used
-- **plans** — id, name, price_monthly, node_limit, session_limit, features[], stripe_price_id (see §8)
+- **plans** — id, name, price_monthly, node_limit, session_limit, features[], stripe_price_id (see §9)
 - **sessions** — id, owner_user_id, org_id, type (personal / meeting), capture_source (mic_live / bot_live / import), title, meeting_url, bot_id, status (active / processing / complete), started_at, ended_at, billed_ms, llm_cost_usd, rating (1-5, nullable), rating_feedback (optional, currently unused by UI)
 - **app_config** — singleton row, admin-editable via `/admin/config`. `waitlist_mode` (bool) — when on, onboarding shows a "still building this, free for now" note. RLS: public read, admin-only write.
 - **utterances** — id, session_id, speaker_label, text, start_ms, end_ms, finalized
 - **nodes** — id, owner_user_id, session_id, type, title, summary, status (open / resolved / done / n-a), hidden (bool, board-visibility toggle, separate from status), provisional (bool, true while still forming), confidence, pos_x, pos_y (nullable — manual drag override), created_at, updated_at
 - **node_utterance_links** — node_id, utterance_id (raw-transcript backlink)
-- **node_edges** — id, from_node_id, to_node_id, relation (see §10 relation vocabulary)
+- **node_edges** — id, from_node_id, to_node_id, relation (see §11 relation vocabulary)
 - **node_notes** — id, node_id, text, created_at
-- **session_ops** — id, session_id, seq, op_type (create_node / attach_node / create_edge / update_status / add_note / hide_node), payload (JSON), created_at — the append-only realtime log described in §10
+- **session_ops** — id, session_id, seq, op_type (create_node / attach_node / create_edge / update_status / add_note / hide_node), payload (JSON), created_at — the append-only realtime log described in §11
 - **usage_events** — id, user_id, org_id, event_type, meta, created_at (feeds admin analytics + plan-limit enforcement)
 - **support_tickets** — id, name, email, subject, message, owner_email, status (open / resolved). Public create, admin-only read/update/delete. Triaged from `/admin/tickets` — no auto-reply.
-- **calendar_connections** — provider (`google` only), connected_at, auto_join (bool). Owner-scoped RLS. See §7.
-- **llm_config** — one row per tier (`t1`/`t2`/`chat`), provider, model, secret_env_var, gemini_cache_name/expires_at/retry_after. Admin-only RLS. See §16.
-- **articles** — title, slug, excerpt, content_markdown, cover_image_url, meta_title/meta_description overrides, status (draft/published), published_at, author_name. Public read, admin-only write. See §18.
+- **calendar_connections** — provider (`google` only), connected_at, auto_join (bool). Owner-scoped RLS. See §8.
+- **llm_config** — one row per tier (`t1`/`t2`/`chat`), provider, model, secret_env_var, gemini_cache_name/expires_at/retry_after. Admin-only RLS. See §17.
+- **articles** — title, slug, excerpt, content_markdown, cover_image_url, meta_title/meta_description overrides, status (draft/published), published_at, author_name. Public read, admin-only write. See §19.
 
 ---
 
-## 12. Pages & Flows
+## 13. Pages & Flows
 
 ### Marketing
-- Landing page (`src/pages/Landing.jsx`) — centered hero, a "how it works" 3-card strip (Talk solo / Join a meeting / Upload a transcript), a scroll-linked reveal paragraph (`ScrollRevealText.jsx`), an FAQ accordion, a TacklyAI preview section (§17), a closing CTA card, and a themed footer (`SiteFooter.jsx`, redesigned — §18) linking Terms/Privacy/Support. `Terms.jsx`/`Privacy.jsx`/`Support.jsx` share the same chrome. SEO: per-page `useDocumentMeta`, `public/robots.txt`, `public/sitemap.xml`.
+- Landing page (`src/pages/Landing.jsx`) — centered hero, a "how it works" 3-card strip (Talk solo / Join a meeting / Upload a transcript), a scroll-linked reveal paragraph (`ScrollRevealText.jsx`), an FAQ accordion, a TacklyAI preview section (§18), a closing CTA card, and a themed footer (`SiteFooter.jsx`, redesigned — §19) linking Terms/Privacy/Support. `Terms.jsx`/`Privacy.jsx`/`Support.jsx` share the same chrome. SEO: per-page `useDocumentMeta`, `public/robots.txt`, `public/sitemap.xml`.
   - **Hero node marquee** (`HeroNodePopups.jsx`) — a continuous dome-shaped marquee of real `NodeCard`s looping left-to-right along an arc, fading near the headline and brightening clear of it; hovering pauses the loop. Desktop/`lg:` only.
 - Support (`src/pages/Support.jsx`, public, `/support`) — themed contact form writing directly to `support_tickets` (RLS allows public create), no backend function needed.
-- Articles (`/articles`, `/articles/:slug`) — see §18.
+- Articles (`/articles`, `/articles/:slug`) — see §19.
 
 ### Auth
 - Sign up / log in via a single dynamic, email-first flow (`AuthFlow.jsx`) — email first, branches to login-or-signup based on `check-email-exists`, 6-digit OTP boxes for verification. See [FINDINGS.md §3](FINDINGS.md#3-mobile-touch-fixes--dynamic-email-first-auth-2026-07-24).
 
 ### Onboarding
-- Shown once per account (localStorage-gated — see the User-entity RLS gotcha in §15 for why not server-side yet), mounted at `AppLayout`. Step 1 "Meet Tackly" (three capture-mode cards); step 2 (waitlist note) only exists when `AppConfig.waitlist_mode` is on. Admins can preview exactly what a new account sees via `/admin/config`.
+- Shown once per account (localStorage-gated — see the User-entity RLS gotcha in §16 for why not server-side yet), mounted at `AppLayout`. Step 1 "Meet Tackly" (three capture-mode cards); step 2 (waitlist note) only exists when `AppConfig.waitlist_mode` is on. Admins can preview exactly what a new account sees via `/admin/config`.
 
 ### Main app
 - **Home ("your threads")** — list of past sessions with search, billed duration per card, hover-revealed delete with inline confirm (no native `confirm()`). Deletion is a real client-side cascade across Nodes/Utterances/NodeNotes/SessionOps/NodeEdges then the Session, under owner RLS. A compact usage badge sits under the page heading.
 - **New session** — "Start talking" (personal), "Invite the bot" (paste a meeting link), or "Import a transcript."
-- **Board view** — the canvas. Live-updating nodes and connectors during capture; a collapsible transcript panel for meeting mode. Tree layout via `d3-hierarchy`, oriented left-to-right: roots stacked vertically if there's more than one independent thread, children fan right, siblings stack in creation order. Soft arched connectors, no arrowheads. Nodes are draggable (`pos_x`/`pos_y` persists); canvas is pannable/zoomable, bounded to content plus padding. Export as PNG, SVG, or Markdown. A "Tackling…" ghost card (`GhostNodeCard.jsx`, with shimmer + real card shadow) renders while a node is being classified. Header buttons (left to right): AI Assistant (§17), Transcript, Export.
+- **Board view** — the canvas. Live-updating nodes and connectors during capture; a collapsible transcript panel for meeting mode. Tree layout via `d3-hierarchy`, oriented left-to-right: roots stacked vertically if there's more than one independent thread, children fan right, siblings stack in creation order. Soft arched connectors, no arrowheads. Nodes are draggable (`pos_x`/`pos_y` persists); canvas is pannable/zoomable, bounded to content plus padding. Export as PNG, SVG, or Markdown. A "Tackling…" ghost card (`GhostNodeCard.jsx`, with shimmer + real card shadow) renders while a node is being classified. Header buttons (left to right): AI Assistant (§18), Transcript, Export.
 - **Node detail panel** — slides in on click: summary, linked transcript excerpts, related nodes, resolve/done controls for Question/Risk/Action, delete/hide. A gold "🗒 n" pill shows note count; "+ Add note" on hover opens `AddNoteModal`. Deleting only hides a node — it doesn't remove the underlying utterance links.
 - **Board export** — PNG/SVG (`src/lib/boardExport.js`) mirrors the live board exactly (same connector style, note badges).
 - **Search** — keyword search across a user's past sessions and nodes.
-- **Settings** — profile; Plan section (real usage + Stripe plan cards, §8); Calendar section (paused, §7).
+- **Settings** — profile; Plan section (real usage + Stripe plan cards, §9); Calendar section (paused, §8).
 - Platform compatibility icons (Google Meet / Teams / Zoom / Slack / Webex + Tackly's own mark) shown on the landing page and Home's "Invite the bot" title.
 
 ### Admin (role-gated, separate route)
-- **Overview** — sessions, meetings captured, average rating, usage-event counts, cost stats (avg $/min, total cost — §9).
-- **Users** — searchable table, manual plan assignment (still the override path alongside real Stripe checkout, §8).
+- **Overview** — sessions, meetings captured, average rating, usage-event counts, cost stats (avg $/min, total cost — §10).
+- **Users** — searchable table, manual plan assignment (still the override path alongside real Stripe checkout, §9).
 - **Plans** (`/admin/plans`) — plan definitions + Stripe Price id + marketing perks editor.
 - **Emails** — preview Resend-based transactional templates with sample data.
-- **Config** — app-wide settings; waitlist-mode toggle + onboarding preview; LLM provider config (§16).
+- **Config** — app-wide settings; waitlist-mode toggle + onboarding preview; LLM provider config (§17).
 - **Tickets** (`/admin/tickets`) — support tickets, open/resolved toggle, no auto-reply.
-- **Articles** (`/admin/articles`) — see §18.
+- **Articles** (`/admin/articles`) — see §19.
 
 ---
 
-## 13. Design Direction
+## 14. Design Direction
 
 Reference points: Letterly (crisp white, near-monochrome, one dark accent) and Cluely (bold, high-contrast, single loud accent) — both share extreme restraint in the chrome, letting whitespace and typography carry the interface. That's the register the shell sits in; the post-it nodes remain the one place personality lives.
 
@@ -392,7 +421,7 @@ Reference points: Letterly (crisp white, near-monochrome, one dark accent) and C
 
 ---
 
-## 14. Phased Build Plan
+## 15. Phased Build Plan
 
 Phases, not literal calendar days — build and review each before moving to the next.
 
@@ -403,14 +432,14 @@ Phases, not literal calendar days — build and review each before moving to the
 - **Phase 5 — Admin + billing + polish.** Admin dashboard, billing wiring, full design polish, landing page.
 - **Phase 6 — Demo prep.** Demo video, docs/README, bug bash, submission buffer.
 
-All six phases are complete — see §2. Post-launch work (§3, and FINDINGS.md) has continued past this original plan.
+All six phases are complete — see §2. Post-launch work (§4, and FINDINGS.md) has continued past this original plan.
 
 ---
 
-## 15. Open Questions
+## 16. Open Questions
 
 - ~~Plan/pricing tiers~~ — **resolved**: Free (30 min/mo, personal + meetings), Plus (£10/mo, 300 min), Pro (£18/mo, 1000 min). Minutes = span of utterance timestamps, same formula for every capture source (`base44/shared/billing.ts`).
-- ~~Stripe checkout/webhook~~ — **resolved**, see §8.
+- ~~Stripe checkout/webhook~~ — **resolved**, see §9.
 - **Resend — minimally built.** Only the welcome email is actually wired to a trigger (fires client-side right after signup OTP verification, best-effort/fire-and-forget — there's no Base44 lifecycle hook for "user created" to hang this off server-side instead). quota-warning and plan-upgraded templates exist but aren't triggered by anything yet.
 - **Onboarding "seen" state is still localStorage-only, not persisted server-side** — a user onboarding on a second device sees it again. Fixing this properly means writing a flag onto the user's own `User` record via a dedicated backend function, since `User`'s custom RLS (added for admin plan-assignment) only grants admin read/update, not self-access.
 - **Support tickets have no auto-reply and no email notification to admins when one arrives** — an admin has to remember to check `/admin/tickets`. Worth a Resend-triggered "new ticket" admin notification if volume ever justifies it.
@@ -418,11 +447,11 @@ All six phases are complete — see §2. Post-launch work (§3, and FINDINGS.md)
 - **A hidden node's eligibility for re-attachment** — should Tier 1 be able to re-attach new utterances to a node the user has deliberately hidden? Default recommendation is no; confirm rather than assume if this comes up.
 - **`check-email-exists` is a deliberately minimal email-enumeration surface** — unauthenticated, callable by anyone, returns only `{exists: true|false}`. No rate limiting added (nothing else in the auth surface has any either); worth revisiting if abuse shows up in logs.
 - **Gemini classification-quality gap vs. Haiku** — not fully resolved, see [FINDINGS.md §4](FINDINGS.md#4-configurable-per-tier-llm-provider--activation-log-2026-07-24). Flagged for a decision on a Gemini-specific prompt tuning pass vs. accepting the tradeoff for cost.
-- **Calendar auto-join doesn't yet produce a board** — see the known gap in §7.
+- **Calendar auto-join doesn't yet produce a board** — see the known gap in §8.
 
 ---
 
-## 16. Configurable Per-Tier LLM Provider
+## 17. Configurable Per-Tier LLM Provider
 
 Tier 1 (`process-session`), Tier 2 (`consolidate-session`), and TacklyAI chat (`ask-tackly-ai`) can each be pointed at a different provider/model from **Admin > Config > "LLM models"**, without a code deploy. Full activation history and a real production incident are in [FINDINGS.md §4](FINDINGS.md#4-configurable-per-tier-llm-provider--activation-log-2026-07-24).
 
@@ -435,7 +464,7 @@ Tier 1 (`process-session`), Tier 2 (`consolidate-session`), and TacklyAI chat (`
 
 ---
 
-## 17. TacklyAI — Board Assistant
+## 18. TacklyAI — Board Assistant
 
 A chat button in the board header opens a scoped Q&A assistant that can only see and answer from that ONE session's own nodes — never cross-session, never account-wide history. Build/redesign history: [FINDINGS.md §5](FINDINGS.md#5-tacklyai--build-rounds--verification-2026-07-24--2026-07-25).
 
@@ -447,7 +476,7 @@ A chat button in the board header opens a scoped Q&A assistant that can only see
 
 ---
 
-## 18. Articles/Blog + SEO
+## 19. Articles/Blog + SEO
 
 Full investigation notes (sitemap indexing check, verification detail): [FINDINGS.md §6](FINDINGS.md#6-articlesblog-footer--closing-cta-redesign-seo-polish-2026-07-25).
 

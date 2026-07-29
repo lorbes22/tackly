@@ -3,6 +3,7 @@ import { base44 } from "@/api/base44Client";
 import { OnboardingModal } from "@/components/OnboardingModal";
 import { Eye, Settings } from "lucide-react";
 import { LlmModelsCard } from "@/components/LlmModelsCard";
+import { BadgesCard } from "@/components/BadgesCard";
 
 const AppConfig = base44.entities.AppConfig;
 
@@ -106,6 +107,8 @@ export default function ConfigPage() {
           previewMode
         />
       )}
+
+      <BadgesCard />
 
       <LlmModelsCard />
     </div>

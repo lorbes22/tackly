@@ -26,6 +26,7 @@ import EmailsPage from "@/pages/admin/EmailsPage";
 import ConfigPage from "@/pages/admin/ConfigPage";
 import TicketsPage from "@/pages/admin/TicketsPage";
 import ArticlesPage from "@/pages/admin/ArticlesPage";
+import ActivityPage from "@/pages/admin/ActivityPage";
 
 export default function App() {
   return (
@@ -83,6 +84,7 @@ export default function App() {
             <Route path="config" element={<ConfigPage />} />
             <Route path="tickets" element={<TicketsPage />} />
             <Route path="articles" element={<ArticlesPage />} />
+            <Route path="activity" element={<ActivityPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

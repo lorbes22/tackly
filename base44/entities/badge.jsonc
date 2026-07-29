@@ -1,0 +1,31 @@
+{
+  "name": "Badge",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Admin-facing label only (e.g. \"Product Hunt — Featured\"), never rendered on the site."
+    },
+    "embed_html": {
+      "type": "string",
+      "description": "Raw embed snippet supplied by the badge provider (e.g. Product Hunt's <a><img></a> code), rendered as-is on the landing page hero, sanitized before render."
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this badge currently shows on the landing page. Lets an admin swap badges in/out without deleting the embed code."
+    },
+    "sort_order": {
+      "type": "integer",
+      "default": 0,
+      "description": "Lower shows first when multiple badges are enabled at once."
+    }
+  },
+  "required": ["name", "embed_html"],
+  "rls": {
+    "create": { "user_condition": { "role": "admin" } },
+    "read": true,
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

@@ -19,7 +19,9 @@
         "node_created",
         "node_linked",
         "search_performed",
-        "plan_limit_hit"
+        "plan_limit_hit",
+        "quota_warning_shown",
+        "paywall_shown"
       ],
       "description": "What happened — feeds admin analytics and plan-limit enforcement"
     },

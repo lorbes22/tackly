@@ -16,12 +16,15 @@ export type EffectivePlan = {
 };
 
 // No Plan record needs to exist for Free — this is the fallback whenever a
-// user has no plan_id, or their plan_id doesn't resolve to a real Plan.
+// user has no plan_id, or their plan_id doesn't resolve to a real Plan. This
+// is the common case: most free users never get a plan_id written at all, so
+// this constant (not the "Free" Plan row's own allows_meetings field) is what
+// actually gates their access day to day — the two must be kept in sync.
 export const FREE_PLAN: EffectivePlan = {
   id: null,
   name: "Free",
   minute_limit: 30,
-  allows_meetings: false,
+  allows_meetings: true,
 };
 
 export async function getEffectivePlan(
