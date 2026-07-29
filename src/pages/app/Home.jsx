@@ -44,7 +44,7 @@ const captureKind = {
   import: { label: "Imported transcript", Icon: FileText },
 };
 
-function SessionCard({ session, confirming, deleting, onAskDelete, onCancelDelete, onConfirmDelete }) {
+function SessionCard({ session, collaboratorCount, confirming, deleting, onAskDelete, onCancelDelete, onConfirmDelete }) {
   const { label, Icon } = captureKind[session.capture_source] || captureKind.mic_live;
   const duration = formatDuration(session.billed_ms);
 
@@ -79,7 +79,18 @@ function SessionCard({ session, confirming, deleting, onAskDelete, onCancelDelet
           <Icon className="h-5 w-5 text-periwinkle-deep" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate font-medium text-ink">{session.title}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="truncate font-medium text-ink">{session.title}</p>
+            {collaboratorCount > 0 && (
+              <span
+                title={`Shared with ${collaboratorCount} ${collaboratorCount === 1 ? "person" : "people"}`}
+                className="flex shrink-0 items-center gap-1 rounded-full border border-line bg-note-lavender px-1.5 py-0.5 text-xs font-medium text-ink"
+              >
+                <Users className="h-3 w-3" />
+                {collaboratorCount}
+              </span>
+            )}
+          </div>
           <p className="text-sm text-ink-soft">
             {label} · {formatDate(session.created_date)}
             {duration && <> · {duration}</>}
@@ -154,20 +165,27 @@ export default function Home() {
   const [confirmId, setConfirmId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [leavingId, setLeavingId] = useState(null);
+  const [collaboratorCounts, setCollaboratorCounts] = useState({});
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [data, shared] = await Promise.all([
+        const [data, shared, ownedGrants] = await Promise.all([
           Session.list("-created_date", 50),
           user?.email
             ? Collaborator.filter({ collaborator_email: user.email }, "-invited_at", 50)
+            : Promise.resolve([]),
+          user?.email
+            ? Collaborator.filter({ owner_email: user.email }, "-invited_at", 200)
             : Promise.resolve([]),
         ]);
         if (!cancelled) {
           setSessions(data);
           setSharedBoards(shared);
+          const counts = {};
+          for (const c of ownedGrants) counts[c.session_id] = (counts[c.session_id] || 0) + 1;
+          setCollaboratorCounts(counts);
         }
       } catch {
         // RLS returns only the user's own sessions/grants; treat failures as empty
@@ -294,7 +312,7 @@ export default function Home() {
               tab === "mine" ? "text-ink" : "text-ink-faint hover:text-ink-soft"
             }`}
           >
-            Your boards
+            Your threads
             {tab === "mine" && (
               <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-periwinkle" />
             )}
@@ -305,7 +323,7 @@ export default function Home() {
               tab === "shared" ? "text-ink" : "text-ink-faint hover:text-ink-soft"
             }`}
           >
-            Shared with you
+            Shared threads
             {sharedBoards.length > 0 && (
               <span className="ml-1.5 rounded-full bg-paper-sunken px-1.5 py-0.5 text-xs text-ink-soft">
                 {sharedBoards.length}
@@ -355,6 +373,7 @@ export default function Home() {
               <SessionCard
                 key={s.id}
                 session={s}
+                collaboratorCount={collaboratorCounts[s.id] || 0}
                 confirming={confirmId === s.id}
                 deleting={deletingId === s.id}
                 onAskDelete={(e) => {

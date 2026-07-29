@@ -398,10 +398,17 @@ export default function Board() {
     return s;
   }, [sessionId]);
 
-  // Non-owner fallback: only reached once loadInitial() above fails (RLS
-  // blocked it — not the owner). Resolves editor/viewer access via
-  // get-board-access and seeds board state from its full-snapshot response
-  // instead of the owner-scoped direct queries.
+  // Non-owner fallback: only reached once loadInitial() above fails. NOTE:
+  // that failure isn't proof the caller is a non-owner — Session.get() 404s
+  // identically whether a session truly doesn't exist or RLS is just
+  // hiding it, so a transient error (timeout, rate limit, anything) on the
+  // owner's OWN load looks exactly the same from here. get-board-access is
+  // the tiebreaker: if it resolves this caller as "owner" too, the original
+  // failure was spurious — adopt the snapshot but do NOT flip into shared
+  // mode (see the caller below), since that would silently downgrade the
+  // real owner to polling + wholesale-replace instead of realtime + ops for
+  // the rest of the visit. This was a real, shipped bug (see FINDINGS.md)
+  // that made solo sessions feel "extremely slow" after a transient hiccup.
   const loadShared = useCallback(async () => {
     const livestreamToken = searchParams.get("live") || undefined;
     const res = await base44.functions.invoke("get-board-access", {
@@ -418,7 +425,6 @@ export default function Board() {
         counts[note.node_id] = (counts[note.node_id] || 0) + 1;
       }
     }
-    setSharedRole(role);
     setSession(s);
     setNodes(n);
     setUtterances(u);
@@ -429,20 +435,28 @@ export default function Board() {
       initialNodeIds.current = ids;
       initialEdgeIds.current = new Set(allEdges.map((x) => x.id));
     }
+    // Only a genuine non-owner role ever switches the board into
+    // shared/polling mode — see the comment above.
+    if (role !== "owner") setSharedRole(role);
     return s;
   }, [sessionId, searchParams]);
 
   // Initial load + realtime ops subscription
   useEffect(() => {
     let cancelled = false;
-    loadInitial().catch(async () => {
-      if (cancelled) return;
-      try {
-        await loadShared();
-      } catch {
-        if (!cancelled) setNotFound(true);
-      }
-    });
+    // One quick retry before falling back — loadInitial's Promise.all is 6
+    // queries at once, and a single transient failure among them shouldn't
+    // immediately assume "not the owner" (see loadShared's comment above).
+    loadInitial()
+      .catch(() => loadInitial())
+      .catch(async () => {
+        if (cancelled) return;
+        try {
+          await loadShared();
+        } catch {
+          if (!cancelled) setNotFound(true);
+        }
+      });
 
     // Realtime only ever makes sense for the owner — a non-owner's own
     // subscription can't see these owner-scoped rows regardless of RLS
