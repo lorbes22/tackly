@@ -91,11 +91,40 @@ function TacklingIndicator() {
 
 // Bottom-center live capture controls for the board.
 
-export function MicBar({ onFinalTurn, onPartial, onEnd, ending }) {
+export function MicBar({
+  onFinalTurn,
+  onPartial,
+  onEnd,
+  ending,
+  onClaimMic,
+  onReleaseMic,
+  blockedBy,
+}) {
   const { state, partial, error, startHold, endHold } = useHoldToTalk({
     onFinalTurn,
     onPartial,
   });
+  // Only meaningful when onClaimMic is passed (a board with collaborators) —
+  // a brief "checking…" state while the claim round-trip is in flight, so
+  // there's no dead silence between pressing and either starting or getting
+  // blocked by whoever else is talking.
+  const [claiming, setClaiming] = useState(false);
+
+  const tryStart = async () => {
+    if (blockedBy) return;
+    if (onClaimMic) {
+      setClaiming(true);
+      const ok = await onClaimMic();
+      setClaiming(false);
+      if (!ok) return;
+    }
+    startHold();
+  };
+  const tryEnd = () => {
+    if (state === "idle") return;
+    endHold();
+    onReleaseMic?.();
+  };
 
   // Hold Space to talk (ignoring inputs/buttons focus interactions)
   useEffect(() => {
@@ -105,13 +134,13 @@ export function MicBar({ onFinalTurn, onPartial, onEnd, ending }) {
     const down = (e) => {
       if (e.code === "Space" && !e.repeat && !isTyping(e)) {
         e.preventDefault();
-        startHold();
+        tryStart();
       }
     };
     const up = (e) => {
       if (e.code === "Space" && !isTyping(e)) {
         e.preventDefault();
-        endHold();
+        tryEnd();
       }
     };
     window.addEventListener("keydown", down);
@@ -120,11 +149,19 @@ export function MicBar({ onFinalTurn, onPartial, onEnd, ending }) {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
     };
-  }, [startHold, endHold]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startHold, endHold, blockedBy, onClaimMic, onReleaseMic]);
+
+  const disabled = !!blockedBy || claiming;
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-5 z-10 flex flex-col items-center gap-2 px-4">
-      {(partial || error) && (
+      {blockedBy && (
+        <div className="pointer-events-auto max-w-lg rounded-note border-2 border-ink bg-note-amber px-3.5 py-2 text-sm font-medium text-ink shadow-brutal-sm">
+          {blockedBy} is speaking right now
+        </div>
+      )}
+      {!blockedBy && (partial || error) && (
         <div
           className={`pointer-events-auto max-w-lg rounded-note border-2 border-ink px-3.5 py-2 text-sm font-medium text-ink shadow-brutal-sm ${
             error ? "bg-note-coral" : "bg-paper-raised"
@@ -136,16 +173,17 @@ export function MicBar({ onFinalTurn, onPartial, onEnd, ending }) {
       <div className="pointer-events-auto flex items-center gap-3">
         <button
           type="button"
+          disabled={disabled}
           onPointerDown={(e) => {
             e.preventDefault();
-            startHold();
+            tryStart();
           }}
-          onPointerUp={endHold}
-          onPointerLeave={() => state !== "idle" && endHold()}
-          className={`flex h-14 items-center gap-2.5 rounded-2xl border-2 border-ink px-6 font-display text-base font-bold text-ink shadow-brutal transition-all select-none ${
+          onPointerUp={tryEnd}
+          onPointerLeave={() => state !== "idle" && tryEnd()}
+          className={`flex h-14 items-center gap-2.5 rounded-2xl border-2 border-ink px-6 font-display text-base font-bold text-ink shadow-brutal transition-all select-none disabled:opacity-60 ${
             state === "listening"
               ? "translate-x-0.5 translate-y-0.5 bg-note-coral shadow-brutal-sm"
-              : state === "connecting"
+              : state === "connecting" || claiming
               ? "bg-note-amber"
               : "bg-note-mint hover:-translate-y-0.5"
           }`}
@@ -155,7 +193,7 @@ export function MicBar({ onFinalTurn, onPartial, onEnd, ending }) {
               <TacklingIndicator />
               Tackling… keep holding
             </>
-          ) : state === "connecting" ? (
+          ) : state === "connecting" || claiming ? (
             <>
               <Mic className="h-5 w-5" />
               Connecting…

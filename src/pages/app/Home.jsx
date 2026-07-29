@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
-import { Bot, Mic, FileText, Trash2, User } from "lucide-react";
+import { useAuth } from "@/lib/AuthContext";
+import { Bot, LogOut, Mic, FileText, Trash2, User, Users } from "lucide-react";
 import { UsageBadge } from "@/components/UsageBadge";
 import { PlatformIconPills } from "@/components/PlatformIcons";
 
@@ -11,6 +12,7 @@ const NodeEdge = base44.entities.NodeEdge;
 const Utterance = base44.entities.Utterance;
 const NodeNote = base44.entities.NodeNote;
 const SessionOp = base44.entities.SessionOp;
+const Collaborator = base44.entities.Collaborator;
 
 function formatDate(iso) {
   if (!iso) return "";
@@ -102,6 +104,30 @@ function SessionCard({ session, confirming, deleting, onAskDelete, onCancelDelet
   );
 }
 
+function SharedBoardCard({ collab, leaving, onLeave }) {
+  return (
+    <div className="group relative flex items-center gap-4 rounded-2xl border border-line bg-paper-raised p-4 shadow-note transition-shadow hover:shadow-note-lg">
+      <Link to={`/app/board/${collab.session_id}`} className="flex min-w-0 flex-1 items-center gap-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-note-lavender">
+          <Users className="h-5 w-5 text-ink/70" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium text-ink">{collab.session_title || "Untitled board"}</p>
+          <p className="text-sm text-ink-soft">Shared by {collab.owner_email}</p>
+        </div>
+      </Link>
+      <button
+        onClick={onLeave}
+        disabled={leaving}
+        title="Leave this board"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-faint opacity-0 transition-colors group-hover:opacity-100 hover:bg-note-coral hover:text-ink disabled:opacity-50"
+      >
+        <LogOut className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 function EntryCard({ to, icon: Icon, noteColor, title, body, platforms }) {
   return (
     <Link
@@ -119,20 +145,32 @@ function EntryCard({ to, icon: Icon, noteColor, title, body, platforms }) {
 }
 
 export default function Home() {
+  const { user } = useAuth();
+  const [tab, setTab] = useState("mine"); // "mine" | "shared"
   const [sessions, setSessions] = useState([]);
+  const [sharedBoards, setSharedBoards] = useState([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [confirmId, setConfirmId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [leavingId, setLeavingId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await Session.list("-created_date", 50);
-        if (!cancelled) setSessions(data);
+        const [data, shared] = await Promise.all([
+          Session.list("-created_date", 50),
+          user?.email
+            ? Collaborator.filter({ collaborator_email: user.email }, "-invited_at", 50)
+            : Promise.resolve([]),
+        ]);
+        if (!cancelled) {
+          setSessions(data);
+          setSharedBoards(shared);
+        }
       } catch {
-        // RLS returns only the user's own sessions; treat failures as empty
+        // RLS returns only the user's own sessions/grants; treat failures as empty
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -140,6 +178,18 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
+  }, [user?.email]);
+
+  const leaveSharedBoard = useCallback(async (collab) => {
+    setLeavingId(collab.id);
+    try {
+      await Collaborator.delete(collab.id);
+      setSharedBoards((prev) => prev.filter((c) => c.id !== collab.id));
+    } catch {
+      // best-effort; it just stays in the list if something failed
+    } finally {
+      setLeavingId(null);
+    }
   }, []);
 
   // Deletes a thread and everything hanging off it. There's no cascade at
@@ -182,6 +232,11 @@ export default function Home() {
         (s.title || "").toLowerCase().includes(query.toLowerCase())
       )
     : sessions;
+  const visibleShared = query
+    ? sharedBoards.filter((c) =>
+        (c.session_title || "").toLowerCase().includes(query.toLowerCase())
+      )
+    : sharedBoards;
 
   return (
     <div className="animate-fade-up">
@@ -232,10 +287,61 @@ export default function Home() {
       </div>
 
       <div className="mt-10">
+        <div className="flex items-center gap-1 border-b border-line">
+          <button
+            onClick={() => setTab("mine")}
+            className={`relative h-10 px-3 text-sm font-semibold transition-colors ${
+              tab === "mine" ? "text-ink" : "text-ink-faint hover:text-ink-soft"
+            }`}
+          >
+            Your boards
+            {tab === "mine" && (
+              <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-periwinkle" />
+            )}
+          </button>
+          <button
+            onClick={() => setTab("shared")}
+            className={`relative h-10 px-3 text-sm font-semibold transition-colors ${
+              tab === "shared" ? "text-ink" : "text-ink-faint hover:text-ink-soft"
+            }`}
+          >
+            Shared with you
+            {sharedBoards.length > 0 && (
+              <span className="ml-1.5 rounded-full bg-paper-sunken px-1.5 py-0.5 text-xs text-ink-soft">
+                {sharedBoards.length}
+              </span>
+            )}
+            {tab === "shared" && (
+              <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-periwinkle" />
+            )}
+          </button>
+        </div>
+
+        <div className="mt-6">
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-periwinkle" />
           </div>
+        ) : tab === "shared" ? (
+          visibleShared.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-line py-14 text-center">
+              <p className="font-medium text-ink">No boards shared with you yet</p>
+              <p className="mt-1 text-sm text-ink-soft">
+                When someone invites you to collaborate, it'll show up here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {visibleShared.map((c) => (
+                <SharedBoardCard
+                  key={c.id}
+                  collab={c}
+                  leaving={leavingId === c.id}
+                  onLeave={() => leaveSharedBoard(c)}
+                />
+              ))}
+            </div>
+          )
         ) : visible.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-line py-14 text-center">
             <p className="font-medium text-ink">No threads yet</p>
@@ -261,6 +367,7 @@ export default function Home() {
             ))}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

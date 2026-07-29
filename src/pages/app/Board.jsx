@@ -11,6 +11,7 @@ import { NodeDetailPanel } from "@/components/NodeDetailPanel";
 import { AddNoteModal } from "@/components/AddNoteModal";
 import { MicBar, BotBar, LiveUtteranceFeed } from "@/components/LiveBars";
 import { TacklyAIPanel } from "@/components/TacklyAIPanel";
+import { ShareDropdown } from "@/components/ShareDropdown";
 import { RatingModal } from "@/components/RatingModal";
 import { QuotaWarningModal } from "@/components/QuotaWarningModal";
 import { usePanZoom } from "@/lib/usePanZoom";
@@ -39,6 +40,18 @@ const NodeEdge = base44.entities.NodeEdge;
 const Utterance = base44.entities.Utterance;
 const SessionOp = base44.entities.SessionOp;
 const NodeNote = base44.entities.NodeNote;
+const Collaborator = base44.entities.Collaborator;
+
+// A non-owner (collaborator or livestream viewer) polls this instead of
+// subscribing to realtime — Base44 realtime only ever runs within the
+// subscriber's own RLS, which stays owner-only by design (see the RLS
+// security fix), so it can't be extended to someone else's board without
+// reopening that hole. The owner's own view is completely unaffected by
+// this — it keeps using direct realtime exactly as before.
+const SHARED_POLL_MS = 2500;
+// Only relevant once a board has collaborators — the owner's own view polls
+// this lightly just to know if someone else currently holds the mic.
+const SPEAKER_POLL_MS = 3000;
 
 const CANVAS_W = 2400;
 const CANVAS_H = 1600;
@@ -74,6 +87,11 @@ export default function Board() {
   const [showDeadEndHint, setShowDeadEndHint] = useState(false);
   const deadEndHintShownRef = useRef(false);
   const [notFound, setNotFound] = useState(false);
+  // null = owner (default, existing behavior). "editor"/"viewer" = accessed
+  // via get-board-access rather than owning the Session record directly.
+  const [sharedRole, setSharedRole] = useState(null);
+  const [collaboratorCount, setCollaboratorCount] = useState(0);
+  const [activeSpeakerEmail, setActiveSpeakerEmail] = useState(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [noteModalNodeId, setNoteModalNodeId] = useState(null);
   const [showRating, setShowRating] = useState(false);
@@ -380,11 +398,55 @@ export default function Board() {
     return s;
   }, [sessionId]);
 
+  // Non-owner fallback: only reached once loadInitial() above fails (RLS
+  // blocked it — not the owner). Resolves editor/viewer access via
+  // get-board-access and seeds board state from its full-snapshot response
+  // instead of the owner-scoped direct queries.
+  const loadShared = useCallback(async () => {
+    const livestreamToken = searchParams.get("live") || undefined;
+    const res = await base44.functions.invoke("get-board-access", {
+      session_id: sessionId,
+      livestream_token: livestreamToken,
+    });
+    const { role, session: s, nodes: allNodes, edges: allEdges, utterances: u, notes } = res.data;
+    const n = allNodes.filter((x) => !x.hidden);
+    const ids = new Set(n.map((x) => x.id));
+    const counts = {};
+    for (const note of notes) {
+      seenNoteIdsRef.current.add(note.id);
+      if (ids.has(note.node_id)) {
+        counts[note.node_id] = (counts[note.node_id] || 0) + 1;
+      }
+    }
+    setSharedRole(role);
+    setSession(s);
+    setNodes(n);
+    setUtterances(u);
+    setEdges(allEdges);
+    setNoteCounts(counts);
+    setActiveSpeakerEmail(s.active_speaker_email || null);
+    if (initialNodeIds.current === null) {
+      initialNodeIds.current = ids;
+      initialEdgeIds.current = new Set(allEdges.map((x) => x.id));
+    }
+    return s;
+  }, [sessionId, searchParams]);
+
   // Initial load + realtime ops subscription
   useEffect(() => {
     let cancelled = false;
-    loadInitial().catch(() => !cancelled && setNotFound(true));
+    loadInitial().catch(async () => {
+      if (cancelled) return;
+      try {
+        await loadShared();
+      } catch {
+        if (!cancelled) setNotFound(true);
+      }
+    });
 
+    // Realtime only ever makes sense for the owner — a non-owner's own
+    // subscription can't see these owner-scoped rows regardless of RLS
+    // (see the shared-access poll loop below instead, once sharedRole is known).
     const unsubOps = SessionOp.subscribe((event) => {
       if (event.type !== "create") return;
       if (event.data?.session_id !== sessionId) return;
@@ -395,7 +457,83 @@ export default function Board() {
       cancelled = true;
       unsubOps();
     };
-  }, [sessionId, loadInitial, applyOp]);
+  }, [sessionId, loadInitial, loadShared, applyOp]);
+
+  // Shared-access polling — replaces the owner's realtime mechanism with a
+  // periodic full-snapshot refresh for a non-owner (editor or livestream
+  // viewer), since their own realtime subscription can't see owner-scoped
+  // rows. Never runs for the owner's own view.
+  useEffect(() => {
+    if (!sharedRole) return;
+    const interval = setInterval(() => {
+      loadShared().catch(() => {});
+    }, SHARED_POLL_MS);
+    return () => clearInterval(interval);
+  }, [sharedRole, loadShared]);
+
+  // Owner only: check once whether this board has any collaborators at all,
+  // so the mic-lock coordination below only ever activates for a board
+  // that's actually shared — a solo session pays zero extra cost.
+  useEffect(() => {
+    if (sharedRole) return;
+    let cancelled = false;
+    Collaborator.filter({ session_id: sessionId })
+      .then((rows) => !cancelled && setCollaboratorCount(rows.length))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, sharedRole]);
+
+  // Owner-with-collaborators: lightweight poll for who currently holds the
+  // mic. An editor gets this for free from loadShared's own poll above
+  // (its snapshot already includes active_speaker_email), so this only
+  // needs to run for the owner's side of a shared board.
+  useEffect(() => {
+    if (sharedRole || collaboratorCount === 0) return;
+    let cancelled = false;
+    const poll = () =>
+      Session.get(sessionId)
+        .then((s) => !cancelled && setActiveSpeakerEmail(s.active_speaker_email || null))
+        .catch(() => {});
+    poll();
+    const interval = setInterval(poll, SPEAKER_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [sessionId, sharedRole, collaboratorCount]);
+
+  // True whenever this board actually has more than one person who might
+  // talk — gates the mic-lock claim/release so a plain solo session never
+  // pays for the extra round-trip.
+  const usesMicLock = sharedRole === "editor" || (!sharedRole && collaboratorCount > 0);
+
+  const claimMic = useCallback(async () => {
+    if (!usesMicLock) return true;
+    try {
+      const res = await base44.functions.invoke("mic-lock", {
+        session_id: sessionId,
+        action: "claim",
+      });
+      if (res.data?.claimed) {
+        setActiveSpeakerEmail(user?.email || null);
+        return true;
+      }
+      setActiveSpeakerEmail(res.data?.active_speaker_email || null);
+      return false;
+    } catch {
+      return true; // fail open — a lock-check error shouldn't block talking
+    }
+  }, [usesMicLock, sessionId, user]);
+
+  const releaseMic = useCallback(() => {
+    if (!usesMicLock) return;
+    base44.functions
+      .invoke("mic-lock", { session_id: sessionId, action: "release" })
+      .catch(() => {});
+    setActiveSpeakerEmail(null);
+  }, [usesMicLock, sessionId]);
 
   // Measure card sizes so edges anchor to real centers
   useEffect(() => {
@@ -416,9 +554,9 @@ export default function Board() {
         seq: lastSeqRef.current + 1,
         op_type,
         payload,
-        owner_email: user?.email,
+        owner_email: session?.owner_email || user?.email,
       }).catch(() => {}),
-    [sessionId, user]
+    [sessionId, user, session]
   );
 
   // Live capture: batch finalized utterances into ONE classification call per
@@ -508,10 +646,11 @@ export default function Board() {
   useEffect(() => () => clearTimeout(justTackledTimerRef.current), []);
 
   const isLive = session?.status === "active";
-  const isMicLive = isLive && (session?.capture_source === "mic_live" || micContinuing);
-  const isBotLive = isLive && session?.capture_source === "bot_live" && !micContinuing;
+  const isViewer = sharedRole === "viewer";
+  const isMicLive = isLive && !isViewer && (session?.capture_source === "mic_live" || micContinuing);
+  const isBotLive = isLive && !isViewer && session?.capture_source === "bot_live" && !micContinuing;
   const canContinueByVoice =
-    session?.capture_source === "bot_live" && session?.status === "complete" && !micContinuing;
+    !isViewer && session?.capture_source === "bot_live" && session?.status === "complete" && !micContinuing;
   // A completed personal/import thread has no hold-to-talk bar and no
   // "continue by voice" alternative (that's bot-only) — previously that just
   // left an empty area at the bottom with no indication anything's final.
@@ -692,8 +831,12 @@ export default function Board() {
       try {
         const utt = await Utterance.create({
           session_id: sessionId,
-          owner_email: user?.email,
-          speaker_label: "Me",
+          // The session's real owner, not necessarily whoever is currently
+          // holding the mic — a collaborator's own email here would strand
+          // this utterance outside the owner's $or:[created_by, owner_email]
+          // read scope, same bug as the provisional-node create above.
+          owner_email: session?.owner_email || user?.email,
+          speaker_label: session?.owner_email && session.owner_email !== user?.email ? user?.email : "Me",
           text: turn.transcript,
           start_ms: Date.now() - micStartRef.current,
           finalized: true,
@@ -946,7 +1089,7 @@ export default function Board() {
         node_id: nodeId,
         session_id: sessionId,
         text: clean,
-        owner_email: user?.email,
+        owner_email: session?.owner_email || user?.email,
       });
       seenNoteIdsRef.current.add(note.id);
       setNoteCounts((prev) => ({
@@ -1060,6 +1203,9 @@ export default function Board() {
               Tackled 👀
             </span>
           )}
+          {!sharedRole && session && (
+            <ShareDropdown session={session} onSessionChange={setSession} />
+          )}
           <TacklyAIPanel
             sessionId={sessionId}
             sessionTitle={session?.title}
@@ -1172,9 +1318,9 @@ export default function Board() {
                 <div
                   key={node.id}
                   data-node
-                  onPointerDown={(e) => startNodeDrag(e, node.id)}
+                  onPointerDown={isViewer ? undefined : (e) => startNodeDrag(e, node.id)}
                   className={`absolute touch-none ${
-                    dragPos?.id === node.id ? "cursor-grabbing" : "cursor-grab"
+                    isViewer ? "cursor-default" : dragPos?.id === node.id ? "cursor-grabbing" : "cursor-grab"
                   }`}
                   style={{ left: p.x, top: p.y }}
                 >
@@ -1188,7 +1334,7 @@ export default function Board() {
                     forming={!!node.provisional && !settledIds.has(node.id)}
                     animate={initialNodeIds.current && !initialNodeIds.current.has(node.id)}
                     className={selectedId === node.id ? "shadow-brutal-lg ring-2 ring-periwinkle" : ""}
-                    onNotesClick={(id) => setNoteModalNodeId(id)}
+                    onNotesClick={isViewer ? undefined : (id) => setNoteModalNodeId(id)}
                     onClick={() => {
                       // Suppress the click that follows a drag
                       if (draggedRef.current) {
@@ -1273,6 +1419,13 @@ export default function Board() {
             onPartial={handleMicPartial}
             onEnd={endLiveSession}
             ending={ending}
+            onClaimMic={usesMicLock ? claimMic : undefined}
+            onReleaseMic={usesMicLock ? releaseMic : undefined}
+            blockedBy={
+              usesMicLock && activeSpeakerEmail && activeSpeakerEmail !== user?.email
+                ? activeSpeakerEmail
+                : null
+            }
           />
         )}
         {isBotLive && (
