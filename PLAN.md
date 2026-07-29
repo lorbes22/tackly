@@ -28,6 +28,7 @@
 17. [Configurable Per-Tier LLM Provider](#17-configurable-per-tier-llm-provider)
 18. [TacklyAI — Board Assistant](#18-tacklyai--board-assistant)
 19. [Articles/Blog + SEO](#19-articlesblog--seo)
+20. [Board Sharing (Collaborate + Livestream)](#20-board-sharing-collaborate--livestream)
 
 ---
 
@@ -69,8 +70,8 @@ The core experience is production-usable.
 
 Base44 isn't just hosting — the app leans directly on nearly every part of the platform:
 
-- **Entities (16)**: `Session`, `Utterance`, `Node`, `NodeEdge`, `NodeNote`, `SessionOp`, `User`, `Org`, `Plan`, `AppConfig`, `UsageEvent`, `SupportTicket`, `CalendarConnection`, `LlmConfig`, `Article` — see §12 for the full schema.
-- **Functions (24 Deno serverless functions)**: ingestion (`recall-*`, `assemblyai-token`), classification (`process-session`, `consolidate-session`, `classify-partial`), billing (`stripe-webhook`, `create-checkout-session`, `create-billing-portal-session`, `check-quota`), the board assistant (`ask-tackly-ai`), auth (`check-email-exists`), email (`send-templated-email`), and a dozen `admin-*` management/telemetry functions.
+- **Entities (18)**: `Session`, `Utterance`, `Node`, `NodeEdge`, `NodeNote`, `SessionOp`, `User`, `Org`, `Plan`, `AppConfig`, `UsageEvent`, `SupportTicket`, `CalendarConnection`, `LlmConfig`, `Article`, `Badge`, `Collaborator` — see §12 for the full schema.
+- **Functions (27 Deno serverless functions)**: ingestion (`recall-*`, `assemblyai-token`), classification (`process-session`, `consolidate-session`, `classify-partial`), billing (`stripe-webhook`, `create-checkout-session`, `create-billing-portal-session`, `check-quota`), the board assistant (`ask-tackly-ai`), board sharing (`get-board-access`, `mic-lock`, `invite-collaborator` — see §20), auth (`check-email-exists`), email (`send-templated-email`), and a dozen `admin-*` management/telemetry functions.
 - **Auth**: email OTP + Google OAuth, role-gated (`user`/`admin`) via `User.role`.
 - **Realtime**: `SessionOp` and `Session` subscriptions drive the entire live board — realtime is the primary delivery mechanism, with a poll fallback as defense-in-depth, not the main path ([FINDINGS.md §2](FINDINGS.md#2-reliability-lessons-from-real-meeting-testing) covers why the fallback exists).
 - **Row-Level Security (RLS)**, used deliberately across three tiers: owner-scoped (`Session`, `Node`, `Utterance`), admin-only (`LlmConfig`, article/plan writes), and public-read (`Plan`, published `Article`, `AppConfig`).
@@ -87,6 +88,7 @@ The one deliberate opt-out: LLM calls (Tier 1/Tier 2/chat) bypass Base44's built
 - **Two-tier classification with different cost/latency profiles**: Tier 1 is a sub-second, per-utterance pass with a narrow context window; Tier 2 is a periodic, heavier consolidation pass over the whole graph — sharing one ops-log delivery mechanism despite very different latency budgets. See §11.
 - **Configurable multi-provider LLM routing**: an admin-editable `LlmConfig` entity plus a test-before-activate function (`admin-set-llm-config`) let Tier 1/Tier 2/chat each point at Anthropic or Gemini independently, re-read fresh on every call with no redeploy — and a failing test-call can never take down a tier that was already working. See §17.
 - **Webhook reliability under real-world conditions**: a Recall webhook silently 404ing because a Base44 function's internal dispatcher URL isn't public, and an uncaught signature-verification exception 500ing every delivery, were both found only through live meeting testing against actual function logs — not something code review alone surfaced. See [FINDINGS.md §2](FINDINGS.md#2-reliability-lessons-from-real-meeting-testing).
+- **Cross-user access control without reopening RLS**: every entity's row-level security stays owner-only (tightened further after closing a real public-create gap — see [FINDINGS.md §13](FINDINGS.md#13-rls-security-fix--closing-publicunauthenticated-create-access-2026-07-29)), yet board sharing still needed a collaborator or livestream viewer to see someone else's board. Base44 RLS can't express a cross-entity check ("does a grant row exist"), so a single service-role gateway function (`get-board-access`) resolves access and returns a snapshot instead — the only place a non-owner ever sees another user's data, polled on an interval rather than subscribed to, since realtime only ever runs within the subscriber's own RLS. See §20.
 - **Cost per minute reduced from ~$0.0667/min → ~$0.03/min**: via Tier-2 frequency/model changes, `openList` windowing, a filler pre-filter, live-utterance batching, and real per-session cost tracking that didn't exist before any of this work started. Full round-by-round detail in §10 and [FINDINGS.md §1](FINDINGS.md#1-cost-audit--transcript-to-node-pipeline-2026-07-24-rounds-1-6).
 
 ---
@@ -95,6 +97,11 @@ The one deliberate opt-out: LLM calls (Tier 1/Tier 2/chat) bypass Base44's built
 
 Newest first. Each links to the detailed investigation in [FINDINGS.md](FINDINGS.md) where one exists.
 
+- **2026-07-29 — Production rollback + real-time perf regression, root-caused and fixed.** A deploy of the sharing feature was rolled back live after it made rendering "extremely slow," even for solo sessions. Root cause: a fallback path could silently and permanently flip the *owner's own view* into shared/polling mode after any transient load hiccup, fighting the real realtime subscription. Fixed, re-verified, and redeployed; also found (separately) that the rollback itself had reopened the RLS security hole, since it deployed entities from a pre-fix branch — re-closed. See [FINDINGS.md §15](FINDINGS.md#15-production-rollback-the-owner-falsely-enters-shared-mode-bug-and-the-gemini-speed-false-alarm-2026-07-29).
+- **2026-07-29 — Board sharing: Collaborate + Livestream.** Up to 3 full-parity collaborators (one speaker at a time, enforced server-side) or a single view-only livestream link that dies when the session ends. New `Collaborator` entity, a service-role gateway function for non-owner access, mic-lock, Resend invite email, and Home's Your threads/Shared threads tabs. See [§20](#20-board-sharing-collaborate--livestream), [FINDINGS.md §14](FINDINGS.md#14-board-sharing-collaborate--livestream-2026-07-29).
+- **2026-07-29 — RLS security fix.** Closed a real public/unauthenticated create-access gap (Base44's own security scan flagged 10 entities) — every real write path was already authenticated, so this was a pure hole-close with no functional impact once the right RLS pattern was found. See [FINDINGS.md §13](FINDINGS.md#13-rls-security-fix--closing-publicunauthenticated-create-access-2026-07-29).
+- **2026-07-29 — Admin overview stats, admin nav redesign, mobile pinch-zoom, camera auto-follow.** Signups tile was never wired up (fixed), recent feedback surfaced with pagination, admin nav rebuilt with a mobile burger menu, real two-finger pinch-zoom added to the board canvas, and new nodes gently nudge the viewport into view. See [FINDINGS.md §12](FINDINGS.md#12-admin-overview-stats-admin-nav-redesign-mobile-pinch-zoom-camera-auto-follow-2026-07-29).
+- **2026-07-29 — Product Hunt badge, free-tier meetings, quota-warning popup, activity log, email logo fix.** Admin-manageable landing-page badges, Free plan can now invite the meeting bot (a fallback-constant bug had it blocked despite the Plan row allowing it), a halfway-quota upgrade popup, a new admin Activity log, and a real fix for the transactional-email logo never rendering (Gmail strips data-URI images). See [FINDINGS.md §11](FINDINGS.md#11-product-hunt-badge-free-tier-meetings-quota-warning-popup-activity-log-email-logo-fix-2026-07-29).
 - **2026-07-25 — New "Update" node type.** A first-class node type for "we changed/fixed/added X" reports that were previously getting silently absorbed into an unrelated node's summary. See [§11](#11-node-taxonomy--classification-pipeline), [FINDINGS.md §10](FINDINGS.md#10-new-update-node-type-2026-07-25).
 - **2026-07-25 — Umbrella-node fact-folding (Tier 1) + parent/child merge (Tier 2) fixes.** A broad topic node was absorbing distinct new facts instead of spinning off children; separately, Tier 2 was merging an already-correct parent/child pair. Fixed with prompt rules plus a hard code-level guard against merging a node into its own parent/child. [FINDINGS.md §9](FINDINGS.md#9-umbrella-node-over-folding-tier-1--parent-merged-into-its-own-child-tier-2-2026-07-25).
 - **2026-07-25 — Trailing-clause bug fixed.** An utterance split mid-clause across two STT turns was losing its content on completion instead of expanding the right placeholder node. [FINDINGS.md §8](FINDINGS.md#8-trailing-clause-bug--a-plan-node-that-never-registered-2026-07-25).
@@ -244,7 +251,7 @@ Real subscriptions, replacing the admin-only manual plan assignment as the prima
 
 **Not built:** proration/plan-switch UI beyond what the Billing Portal itself offers, invoices/receipts UI (Portal covers this too), failed-payment dunning emails.
 
-**Free plan needs no Stripe price at all** — everyone's on it by default (`User.plan_id` empty). `Plan.stripe_price_id` gating (and the "Not available yet" state) only applies to paid plans; Free always renders as available/current, and includes meeting access (capped at 30 min/month like the others, not meeting-blocked).
+**Free plan needs no Stripe price at all** — everyone's on it by default (`User.plan_id` empty). `Plan.stripe_price_id` gating (and the "Not available yet" state) only applies to paid plans; Free always renders as available/current, and includes meeting access (capped at 30 min/month like the others, not meeting-blocked). This was the *intended* behavior since the Free `Plan` row itself already set `allows_meetings: true`, but a hardcoded fallback constant in `billing.ts` (used for every real free user, since none of them actually have a `plan_id` set) still blocked it until 2026-07-29 — see [FINDINGS.md §11](FINDINGS.md#11-product-hunt-badge-free-tier-meetings-quota-warning-popup-activity-log-email-logo-fix-2026-07-29).
 
 **Public pricing** (`/plans`, `src/pages/Plans.jsx`) and a landing-page pricing section both render `src/components/PlanCards.jsx` — Free is always the primary, full-opacity card; Plus (the middle paid tier) always carries a "Most used" tag. Logged-out viewers get a "Get started" link to `/signup` on every plan instead of Upgrade buttons. Settings' own Plan section shows usage + "Manage billing" + a "View all plans →" button that pops `PlanCards` up in a centered `PlansModal`. Admins can edit each plan's marketing "perks" list directly from `/admin/plans` (`FeatureEditor`) alongside the Stripe Price id field.
 
@@ -357,19 +364,23 @@ If live Tier-1 placement isn't holding up reliably, batch-process the full trans
 - **users** — id, email, name, role (user / admin), org_id, plan_id, stripe_customer_id, stripe_subscription_id, created_at
 - **orgs** — id, name, plan_id, seats_used
 - **plans** — id, name, price_monthly, node_limit, session_limit, features[], stripe_price_id (see §9)
-- **sessions** — id, owner_user_id, org_id, type (personal / meeting), capture_source (mic_live / bot_live / import), title, meeting_url, bot_id, status (active / processing / complete), started_at, ended_at, billed_ms, llm_cost_usd, rating (1-5, nullable), rating_feedback (optional, currently unused by UI)
+- **sessions** — id, owner_user_id, owner_email, org_id, type (personal / meeting), capture_source (mic_live / bot_live / import), title, meeting_url, bot_id, status (active / processing / complete), started_at, ended_at, billed_ms, llm_cost_usd, rating (1-5, nullable), rating_feedback (optional, surfaced in admin — see §3/§12 below), livestream_token (nullable, minted lazily, only grants access while status is "active" — see §20), active_speaker_email / active_speaker_claimed_at (the Collaborate mic lock — see §20)
 - **app_config** — singleton row, admin-editable via `/admin/config`. `waitlist_mode` (bool) — when on, onboarding shows a "still building this, free for now" note. RLS: public read, admin-only write.
-- **utterances** — id, session_id, speaker_label, text, start_ms, end_ms, finalized
-- **nodes** — id, owner_user_id, session_id, type, title, summary, status (open / resolved / done / n-a), hidden (bool, board-visibility toggle, separate from status), provisional (bool, true while still forming), confidence, pos_x, pos_y (nullable — manual drag override), created_at, updated_at
-- **node_utterance_links** — node_id, utterance_id (raw-transcript backlink)
-- **node_edges** — id, from_node_id, to_node_id, relation (see §11 relation vocabulary)
-- **node_notes** — id, node_id, text, created_at
-- **session_ops** — id, session_id, seq, op_type (create_node / attach_node / create_edge / update_status / add_note / hide_node), payload (JSON), created_at — the append-only realtime log described in §11
-- **usage_events** — id, user_id, org_id, event_type, meta, created_at (feeds admin analytics + plan-limit enforcement)
+- **utterances** — id, session_id, speaker_label, text, start_ms, end_ms, finalized, owner_email (fallback so a service-role or collaborator write still reaches the true owner's view)
+- **nodes** — id, owner_user_id, session_id, type, title, summary, status (open / resolved / done / n-a), hidden (bool, board-visibility toggle, separate from status), provisional (bool, true while still forming), confidence, pos_x, pos_y (nullable — manual drag override), owner_email (same fallback purpose as utterances — added for Collaborate, see §20), created_at, updated_at
+- **node_utterance_links** — node_id, utterance_id (raw-transcript backlink), owner_email (same fallback)
+- **node_edges** — id, from_node_id, to_node_id, relation (see §11 relation vocabulary), owner_email (same fallback)
+- **node_notes** — id, node_id, text, owner_email, created_at
+- **session_ops** — id, session_id, seq, op_type (create_node / attach_node / create_edge / update_status / add_note / hide_node), payload (JSON), owner_email, created_at — the append-only realtime log described in §11
+- **usage_events** — id, user_id, org_id, event_type (session_started / session_completed / transcript_imported / node_created / node_linked / search_performed / plan_limit_hit / quota_warning_shown / paywall_shown), meta, created_at (feeds admin analytics + plan-limit enforcement — see the admin Activity page in §13)
 - **support_tickets** — id, name, email, subject, message, owner_email, status (open / resolved). Public create, admin-only read/update/delete. Triaged from `/admin/tickets` — no auto-reply.
 - **calendar_connections** — provider (`google` only), connected_at, auto_join (bool). Owner-scoped RLS. See §8.
 - **llm_config** — one row per tier (`t1`/`t2`/`chat`), provider, model, secret_env_var, gemini_cache_name/expires_at/retry_after. Admin-only RLS. See §17.
 - **articles** — title, slug, excerpt, content_markdown, cover_image_url, meta_title/meta_description overrides, status (draft/published), published_at, author_name. Public read, admin-only write. See §19.
+- **badges** — name (admin label only), embed_html (raw third-party embed snippet, sanitized before render), enabled (bool), sort_order. Public read, admin-only write — see §13.
+- **collaborators** — session_id, owner_email (denormalized — a collaborator can't read the owner-only Session record directly), collaborator_email, session_title (denormalized snapshot for cheap listing), invited_at. See §20.
+
+All the `owner_email` fallback fields above follow the same pattern (first used for Recall's service-role webhook writes, later reused for Collaborate): entity RLS reads `$or: [{created_by: user.email}, {data.owner_email: user.email}]`, so a write made by anyone other than the record's own creator — a service-role webhook, or now a collaborator — still shows up in the true owner's own view.
 
 ---
 
@@ -378,6 +389,7 @@ If live Tier-1 placement isn't holding up reliably, batch-process the full trans
 ### Marketing
 - Landing page (`src/pages/Landing.jsx`) — centered hero, a "how it works" 3-card strip (Talk solo / Join a meeting / Upload a transcript), a scroll-linked reveal paragraph (`ScrollRevealText.jsx`), an FAQ accordion, a TacklyAI preview section (§18), a closing CTA card, and a themed footer (`SiteFooter.jsx`, redesigned — §19) linking Terms/Privacy/Support. `Terms.jsx`/`Privacy.jsx`/`Support.jsx` share the same chrome. SEO: per-page `useDocumentMeta`, `public/robots.txt`, `public/sitemap.xml`.
   - **Hero node marquee** (`HeroNodePopups.jsx`) — a continuous dome-shaped marquee of real `NodeCard`s looping left-to-right along an arc, fading near the headline and brightening clear of it; hovering pauses the loop. Desktop/`lg:` only.
+  - **Badges** (`src/components/landing/Badges.jsx`) — renders every enabled `Badge` row (e.g. the Product Hunt "Featured" widget) above the eyebrow pill, admin-managed via `/admin/config` so a new badge needs no code deploy. See [FINDINGS.md §11](FINDINGS.md#11-product-hunt-badge-free-tier-meetings-quota-warning-popup-activity-log-email-logo-fix-2026-07-29).
 - Support (`src/pages/Support.jsx`, public, `/support`) — themed contact form writing directly to `support_tickets` (RLS allows public create), no backend function needed.
 - Articles (`/articles`, `/articles/:slug`) — see §19.
 
@@ -388,23 +400,25 @@ If live Tier-1 placement isn't holding up reliably, batch-process the full trans
 - Shown once per account (localStorage-gated — see the User-entity RLS gotcha in §16 for why not server-side yet), mounted at `AppLayout`. Step 1 "Meet Tackly" (three capture-mode cards); step 2 (waitlist note) only exists when `AppConfig.waitlist_mode` is on. Admins can preview exactly what a new account sees via `/admin/config`.
 
 ### Main app
-- **Home ("your threads")** — list of past sessions with search, billed duration per card, hover-revealed delete with inline confirm (no native `confirm()`). Deletion is a real client-side cascade across Nodes/Utterances/NodeNotes/SessionOps/NodeEdges then the Session, under owner RLS. A compact usage badge sits under the page heading.
+- **Home** — "Your threads" / "Shared threads" tabs (the latter reads `Collaborator` rows directly — see §20; a thread you've shared shows a small collaborator-count badge). Your-threads list has search, billed duration per card, hover-revealed delete with inline confirm (no native `confirm()`); deletion is a real client-side cascade across Nodes/Utterances/NodeNotes/SessionOps/NodeEdges then the Session, under owner RLS. A shared thread can be left from its own row. A compact usage badge sits under the page heading, and a `QuotaWarningModal` (see below) can appear here too.
 - **New session** — "Start talking" (personal), "Invite the bot" (paste a meeting link), or "Import a transcript."
-- **Board view** — the canvas. Live-updating nodes and connectors during capture; a collapsible transcript panel for meeting mode. Tree layout via `d3-hierarchy`, oriented left-to-right: roots stacked vertically if there's more than one independent thread, children fan right, siblings stack in creation order. Soft arched connectors, no arrowheads. Nodes are draggable (`pos_x`/`pos_y` persists); canvas is pannable/zoomable, bounded to content plus padding. Export as PNG, SVG, or Markdown. A "Tackling…" ghost card (`GhostNodeCard.jsx`, with shimmer + real card shadow) renders while a node is being classified. Header buttons (left to right): AI Assistant (§18), Transcript, Export.
-- **Node detail panel** — slides in on click: summary, linked transcript excerpts, related nodes, resolve/done controls for Question/Risk/Action, delete/hide. A gold "🗒 n" pill shows note count; "+ Add note" on hover opens `AddNoteModal`. Deleting only hides a node — it doesn't remove the underlying utterance links.
+- **Quota warning popup** (`QuotaWarningModal.jsx`) — shown once per calendar month the first time usage crosses 50% of the monthly quota, CTA to Settings. Mounted in both `AppLayout` and `Board.jsx` so it fires wherever the user happens to be when they cross the line.
+- **Board view** — the canvas. Live-updating nodes and connectors during capture; a collapsible transcript panel for meeting mode. Tree layout via `d3-hierarchy`, oriented left-to-right: roots stacked vertically if there's more than one independent thread, children fan right, siblings stack in creation order. Soft arched connectors, no arrowheads. Nodes are draggable (`pos_x`/`pos_y` persists); canvas is pannable/zoomable (real two-finger pinch-zoom on touch, not just wheel — see [FINDINGS.md §12](FINDINGS.md#12-admin-overview-stats-admin-nav-redesign-mobile-pinch-zoom-camera-auto-follow-2026-07-29)), bounded to content plus padding. A new live node gently nudges the pan (never the zoom) into a comfortable viewport margin — off by default toggle next to the zoom controls, only shown during live capture. Export as PNG, SVG, or Markdown. A "Tackling…" ghost card (`GhostNodeCard.jsx`, with shimmer + real card shadow) renders while a node is being classified. Header buttons (left to right): AI Assistant (§18), "Livestream / Share" (owner-only text link opening `ShareDropdown` — see §20), Transcript, Export.
+- **Node detail panel** — slides in on click: summary, linked transcript excerpts, related nodes, resolve/done controls for Question/Risk/Action, delete/hide. A gold "🗒 n" pill shows note count; "+ Add note" on hover opens `AddNoteModal`. Deleting only hides a node — it doesn't remove the underlying utterance links. Hidden/disabled entirely for a livestream viewer (read-only role — see §20).
 - **Board export** — PNG/SVG (`src/lib/boardExport.js`) mirrors the live board exactly (same connector style, note badges).
 - **Search** — keyword search across a user's past sessions and nodes.
 - **Settings** — profile; Plan section (real usage + Stripe plan cards, §9); Calendar section (paused, §8).
 - Platform compatibility icons (Google Meet / Teams / Zoom / Slack / Webex + Tackly's own mark) shown on the landing page and Home's "Invite the bot" title.
 
 ### Admin (role-gated, separate route)
-- **Overview** — sessions, meetings captured, average rating, usage-event counts, cost stats (avg $/min, total cost — §10).
-- **Users** — searchable table, manual plan assignment (still the override path alongside real Stripe checkout, §9).
+- **Overview** — sessions, meetings captured, real signups (total + this month, previously a hardcoded placeholder), average rating, recent-feedback list (5-preview + paginated "view all", 15 at a time), usage-event counts, cost stats (avg $/min, total cost — §10). Nav rebuilt with a mobile burger menu — see [FINDINGS.md §12](FINDINGS.md#12-admin-overview-stats-admin-nav-redesign-mobile-pinch-zoom-camera-auto-follow-2026-07-29).
+- **Users** — searchable table (paginated 15-at-a-time, "load more"), manual plan assignment (still the override path alongside real Stripe checkout, §9).
 - **Plans** (`/admin/plans`) — plan definitions + Stripe Price id + marketing perks editor.
-- **Emails** — preview Resend-based transactional templates with sample data.
-- **Config** — app-wide settings; waitlist-mode toggle + onboarding preview; LLM provider config (§17).
+- **Emails** — preview Resend-based transactional templates with sample data (now includes `board_invite` — see §20).
+- **Config** — app-wide settings; waitlist-mode toggle + onboarding preview; a **Badges** card (add/edit/toggle/delete the landing-page badges above, no deploy needed); LLM provider config (§17).
 - **Tickets** (`/admin/tickets`) — support tickets, open/resolved toggle, no auto-reply.
 - **Articles** (`/admin/articles`) — see §19.
+- **Activity** (`/admin/activity`) — every `paywall_shown`, `quota_warning_shown`, and `plan_limit_hit` usage event, filterable, resolved to the triggering user's email.
 
 ---
 
@@ -487,3 +501,32 @@ Full investigation notes (sitemap indexing check, verification detail): [FINDING
 - **Site-wide meta description** rewritten to compete on "AI notetaker" search intent, mirrored across `index.html`, `Landing.jsx`, and `og:`/`twitter:` tags.
 - **Footer** (`SiteFooter.jsx`) restructured into a 3-column layout (brand+tagline, Product, Company) + bottom bar, reusing the shared `Logo` component for guaranteed wordmark alignment.
 - **Closing CTA** redesigned as a contained neubrutalist card (`rounded-2xl border-2 border-ink shadow-brutal`) instead of a full-bleed color band.
+
+---
+
+## 20. Board Sharing (Collaborate + Livestream)
+
+Two distinct mechanisms, not one flag — chosen by the person sharing, from the "Livestream / Share" text link (owner-only, next to AI Assistant) on the board header. Full build history: [FINDINGS.md §14](FINDINGS.md#14-board-sharing-collaborate--livestream-2026-07-29).
+
+|  | Collaborate | Livestream |
+|---|---|---|
+| Access | Named by email, must already be (or become) a Tackly account | Anyone with the link, still must be a logged-in Tackly account |
+| Role | Full parity with the owner — talk, add notes, everything, except one person holds the mic at a time | Read-only viewer |
+| Persists after the session ends? | Yes | No — dies automatically the moment `status` leaves `active`, no separate on/off toggle |
+| Limit | Up to 3 collaborators per board | One link per board (regenerable) |
+
+**Why this needed a real design decision, not just an RLS tweak:** every entity's row-level security is owner-scoped by design (tightened further in the RLS fix — §3), and Base44 RLS has no way to express "grant access if a row exists in another table naming this user" — that's an explicit limitation, not an oversight (cross-entity checks need a backend function). So a collaborator or livestream viewer never gets direct entity access; they go through one gateway function instead.
+
+**Data model** (see §12 for the full field list): new `Collaborator` entity (session_id, owner_email, collaborator_email, denormalized session_title, invited_at). `Session` gained `livestream_token` (nullable, minted lazily) and `active_speaker_email`/`active_speaker_claimed_at` (the mic lock). `Node`, `NodeEdge`, and `NodeUtteranceLink` gained the same `owner_email` fallback `Utterance`/`NodeNote`/`SessionOp` already had, so a collaborator's own writes (a different `created_by`) still reach the true owner's existing realtime view — `process-session`/`consolidate-session` stamp it from the session record on every write.
+
+**`get-board-access`** (service role) is the only way a non-owner ever sees a board. Resolves, in order: owner-email match → a `Collaborator` row for the caller → a valid `livestream_token` while `status === "active"` → else 403. Returns a full snapshot (session, nodes, edges, utterances, notes), not an ops-log replay — a non-owner's client polls this every 2.5s instead of subscribing to realtime, since realtime only ever runs within the *subscriber's* own RLS and extending it to someone else's rows would reopen the exact hole the RLS fix closed. **The owner's own view is completely unaffected** — still direct realtime, zero added cost for a plain solo session; the poll path only activates once `sharedRole` is actually set.
+
+**`mic-lock`** enforces "one speaker at a time" for Collaborate: claim on hold-to-talk press, release on release, service-role so a stale/held lock can't be forced open client-side. A 60s staleness window auto-frees it if a client crashes mid-hold. Deliberately a best-effort claim, not a true compare-and-swap (two people pressing in the same few milliseconds could both read it as free) — acceptable since the failure mode is a brief talking overlap, not a security issue. Wired into `MicBar` (`LiveBars.jsx`) via two optional props (`onClaimMic`/`onReleaseMic`/`blockedBy`, showing "X is speaking right now" and disabling the button) — fully backward-compatible, a plain solo session passes neither prop and behaves exactly as before. Only activates at all once a board actually has a collaborator (`usesMicLock` in `Board.jsx`), checked once via a `Collaborator` count for the owner's side.
+
+**`invite-collaborator`** (owner-only): enforces the 3-collaborator cap and rejects self/duplicate invites server-side (RLS can't count existing rows), creates the `Collaborator` row, and emails the invitee via Resend (`board_invite` template) whether or not they have a Tackly account yet — access resolves the moment they sign up under the same address. `RequireAuth` preserves the full path+query through the login redirect, and `AuthFlow.jsx` shows "You've been invited to '\<board\>'" copy when an invite link's `?invited=1&title=` params survive the round trip.
+
+**Frontend**: Home's "Your threads"/"Shared threads" tabs (the latter reads `Collaborator` rows directly, no function needed — RLS already scopes reads to the invited email; a shared thread can be left from its own row, and a thread you own that's been shared shows a small collaborator-count badge). `ShareDropdown` (owner-only) holds both halves: a lazily-created watch-link (`Session.update` directly, owner-permitted RLS, no function needed) with copy-to-clipboard, and collaborator invite/remove. Livestream viewers get a stripped-down read-only board (no hold-to-talk, node dragging, or note-adding in the UI — backstopped by RLS regardless, since a viewer has neither ownership nor a `Collaborator` row to write against).
+
+**Verified end-to-end via `base44 exec`** against production, simulating a full collaborator round-trip (a session owned by a different email than the acting user): `get-board-access` resolves "editor" correctly, a collaborator's own node write is stamped with the true owner's email and is visible through their own subsequent poll, mic-lock claim/block both work, and editor access correctly wins over a valid livestream token when both apply to the same caller. **Not verified in-browser** — no login credentials available here, so the actual dropdown/tab UI was verified via clean production build and the backend integration test above, not a live click-through.
+
+**A real bug found post-launch, fixed in [FINDINGS.md §15](FINDINGS.md#15-production-rollback-the-owner-falsely-enters-shared-mode-bug-and-the-gemini-speed-false-alarm-2026-07-29):** the non-owner fallback could silently and permanently flip the *owner's own* view into shared/polling mode after any transient load failure, since `Session.get()` 404s identically for "doesn't exist" and "RLS-hidden," and `get-board-access` resolves the true owner as `role: "owner"` regardless of which path called it. This briefly made the live site feel badly broken for solo sessions too, prompting a rollback-and-fix cycle — the fix only sets `sharedRole` when the resolved role is genuinely non-owner.

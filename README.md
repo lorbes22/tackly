@@ -12,11 +12,11 @@ Base44 isn't just hosting — the app leans directly on nearly every part of the
 
 | Base44 primitive | How Tackly uses it |
 |---|---|
-| **Entities** (16) | `Session`, `Utterance`, `Node`, `NodeEdge`, `NodeNote`, `SessionOp`, `User`, `Org`, `Plan`, `AppConfig`, `UsageEvent`, `SupportTicket`, `CalendarConnection`, `LlmConfig`, `Article` |
-| **Functions** (24 Deno serverless functions) | Ingestion (`recall-*`, `assemblyai-token`), classification (`process-session`, `consolidate-session`, `classify-partial`), billing (`stripe-webhook`, `create-checkout-session`, `create-billing-portal-session`, `check-quota`), the board assistant (`ask-tackly-ai`), auth (`check-email-exists`), email (`send-templated-email`), and a dozen `admin-*` management/telemetry functions |
+| **Entities** (18) | `Session`, `Utterance`, `Node`, `NodeEdge`, `NodeNote`, `SessionOp`, `User`, `Org`, `Plan`, `AppConfig`, `UsageEvent`, `SupportTicket`, `CalendarConnection`, `LlmConfig`, `Article`, `Badge`, `Collaborator` |
+| **Functions** (27 Deno serverless functions) | Ingestion (`recall-*`, `assemblyai-token`), classification (`process-session`, `consolidate-session`, `classify-partial`), billing (`stripe-webhook`, `create-checkout-session`, `create-billing-portal-session`, `check-quota`), the board assistant (`ask-tackly-ai`), board sharing (`get-board-access`, `mic-lock`, `invite-collaborator`), auth (`check-email-exists`), email (`send-templated-email`), and a dozen `admin-*` management/telemetry functions |
 | **Auth** | Email OTP + Google OAuth, role-gated (`user`/`admin`) via `User.role` |
-| **Realtime** | `SessionOp` and `Session` subscriptions drive the entire live board — no polling for the primary path (a poll fallback exists for defense-in-depth, not as the main mechanism) |
-| **Row-Level Security (RLS)** | Three tiers used deliberately: owner-scoped (`Session`, `Node`, `Utterance`), admin-only (`LlmConfig`, article/plan writes), and public-read (`Plan`, published `Article`, `AppConfig`) |
+| **Realtime** | `SessionOp` and `Session` subscriptions drive the entire live board for its owner — no polling for the primary path. A non-owner (board collaborator or livestream viewer) polls a dedicated gateway function instead, since realtime can't safely extend past its subscriber's own RLS — see Hardest Backend Problems below |
+| **Row-Level Security (RLS)** | Three tiers used deliberately: owner-scoped (`Session`, `Node`, `Utterance`), admin-only (`LlmConfig`, article/plan writes), and public-read (`Plan`, published `Article`, `AppConfig`). A Base44 security scan caught a real public-create gap across 10 entities, since fixed — see `PLAN.md`/`FINDINGS.md` |
 | **Secrets** | 9 Deno secrets (`ASSEMBLYAI_API_KEY`, `RECALL_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_T1T2_SECRET`, etc. — see Environment Secrets below) |
 | **CLI-driven dev loop** | `entities push`, `functions deploy`, `secrets set`, and `exec` (for scratch-data verification against production) are the primary workflow — no separate backend infra to provision or manage |
 
@@ -30,6 +30,8 @@ The one deliberate opt-out: LLM calls (Tier 1/Tier 2/chat) bypass Base44's built
 - **Two-tier classification with different cost/latency profiles**: Tier 1 is a sub-second, per-utterance pass with a narrow context window; Tier 2 is a periodic, heavier consolidation pass over the whole graph — sharing one ops-log delivery mechanism despite very different latency budgets.
 - **Configurable multi-provider LLM routing**: an admin-editable `LlmConfig` entity plus a test-before-activate function (`admin-set-llm-config`) let Tier 1/Tier 2/chat each point at Anthropic or Gemini independently, re-read fresh on every call with no redeploy — and a failing test-call can never take down a tier that was already working.
 - **Webhook reliability under real-world conditions**: a Recall webhook silently 404ing because a Base44 function's internal dispatcher URL isn't public, and an uncaught signature-verification exception 500ing every delivery, were both found only through live meeting testing against actual function logs — not something code review alone surfaced.
+- **Cross-user access control without reopening RLS**: board sharing (collaborators + a livestream link) needed a non-owner to see someone else's board, but Base44 RLS can't express a cross-entity check ("does a grant row exist"). Solved with a single service-role gateway function that resolves owner/editor/viewer and returns a snapshot — the only place a non-owner ever touches another user's data — polled on an interval rather than subscribed to, since realtime only ever runs within the subscriber's own RLS.
+- **A real-time regression caused by conflating two different "not the owner" cases**: a fallback path meant for genuine non-owners could also fire on a plain transient load failure for the *actual* owner — and since a gateway function correctly resolves the true owner as "owner" regardless of which code path called it, that failure silently and permanently downgraded the owner into polling + wholesale-state-replacement instead of realtime. Live long enough to force a production rollback before the exact conflation was found and fixed — full incident write-up in `FINDINGS.md`.
 - **Cost per minute reduced from ~$0.0667/min → ~$0.03/min**: via Tier-2 frequency/model changes, `openList` windowing, a filler pre-filter, live-utterance batching, and real per-session cost tracking that didn't exist before any of this work started.
 
 Full write-ups for all of the above live in `PLAN.md` and `FINDINGS.md`.
@@ -49,6 +51,9 @@ base44/                       # Backend configuration & serverless code
     ├── recall-webhook/       # Ingests Recall meeting streaming webhooks
     ├── recall-start-bot/     # Deploys Recall bot to meeting link
     ├── stripe-webhook/       # Manages subscription state changes
+    ├── get-board-access/     # Gateway for a collaborator/livestream viewer's board access
+    ├── mic-lock/             # One-speaker-at-a-time claim/release for Collaborate
+    ├── invite-collaborator/  # Owner-only board share invite (email + cap enforcement)
     └── admin-*/              # System management & telemetry functions
 
 src/                          # Frontend (Vite + React)
