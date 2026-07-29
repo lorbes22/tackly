@@ -18,7 +18,7 @@ async function finalizeBilledMs(
   return computeBilledMs(all);
 }
 
-// Tier-1 classification. Calls Claude Haiku 4.5 directly by default (not
+// Tier-1 classification. Calls Claude Gemeni 3.5 Flash Lite directly by default (not
 // Base44's InvokeLLM) — fast, and the static system prompt is prompt-cached
 // since it's identical on every utterance (PLAN.md §1). An admin can point
 // this tier at a different provider/model via Admin > Config > LLM models
@@ -30,7 +30,7 @@ async function finalizeBilledMs(
 // ONE utterance per call so ops stream per-utterance with no batching;
 // imports batch utterances into one call for throughput but still emit ops
 // per decision.
-const TIER1_MODEL = "claude-haiku-4-5-20251001";
+const TIER1_MODEL = "gemini-3.5-flash-lite";
 const IMPORT_BATCH_SIZE = 12;
 
 // Cheap pre-filter (no model call at all): a 1-2 word utterance that's
