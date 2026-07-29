@@ -6,7 +6,7 @@ const NodeNote = base44.entities.NodeNote;
 
 // A single note, shown identically in AddNoteModal and NodeDetailPanel —
 // hover reveals edit/delete, edit swaps in a small textarea in place.
-export function NoteItem({ note, onUpdated, onDelete }) {
+export function NoteItem({ note, onUpdated, onDelete, readOnly = false }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.text);
   const [busy, setBusy] = useState(false);
@@ -73,25 +73,27 @@ export function NoteItem({ note, onUpdated, onDelete }) {
   return (
     <div className="group/notei relative rounded-lg border-2 border-ink bg-note-gold/60 py-2 pl-3 pr-16 text-sm text-ink shadow-brutal-sm">
       {note.text}
-      <div className="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-hover/notei:opacity-100">
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          title="Edit note"
-          className="flex h-6 w-6 items-center justify-center rounded-md text-ink/50 hover:bg-ink/10 hover:text-ink"
-        >
-          <Pencil className="h-3 w-3" />
-        </button>
-        <button
-          type="button"
-          onClick={remove}
-          disabled={busy}
-          title="Delete note"
-          className="flex h-6 w-6 items-center justify-center rounded-md text-ink/50 hover:bg-note-coral hover:text-ink disabled:opacity-50"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-hover/notei:opacity-100">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            title="Edit note"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-ink/50 hover:bg-ink/10 hover:text-ink"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+          <button
+            type="button"
+            onClick={remove}
+            disabled={busy}
+            title="Delete note"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-ink/50 hover:bg-note-coral hover:text-ink disabled:opacity-50"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

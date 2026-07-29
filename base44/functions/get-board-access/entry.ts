@@ -1,15 +1,21 @@
 import { createClientFromRequest } from "npm:@base44/sdk";
 
-// The single gateway a non-owner uses to view (and, for collaborators, act
-// on) someone else's board. Session/Node/NodeEdge/Utterance/NodeNote RLS
-// stays owner-only by design (see the security-scan fix that closed public
-// create access on these entities) — a collaborator or livestream viewer
-// can never read these tables directly, only through this function's own
-// access check, via service role. Returns a full board snapshot rather than
-// an ops-log replay: a shared viewer's client polls this on an interval
-// instead of subscribing to realtime, which only ever runs within the
-// subscriber's own RLS and can't be extended to someone else's rows without
-// reopening exactly what was just locked down.
+// The single gateway a collaborator (editor) uses to view and act on
+// someone else's board. Session/Node/NodeEdge/Utterance/NodeNote RLS stays
+// owner-only by design (see the security-scan fix that closed public create
+// access on these entities) — a collaborator can never read these tables
+// directly, only through this function's own access check, via service
+// role. Returns a full board snapshot rather than an ops-log replay: a
+// collaborator's client polls this on an interval instead of subscribing to
+// realtime, which only ever runs within the subscriber's own RLS and can't
+// be extended to someone else's rows without reopening exactly what was
+// just locked down.
+//
+// This is deliberately owner/editor only. Read-only sharing (anyone with a
+// link, no account needed) is a completely separate, unauthenticated path —
+// see get-shared-board — since it has a different security model entirely
+// (a public token instead of a logged-in identity) and doesn't belong mixed
+// into this function's auth-required flow.
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
@@ -18,7 +24,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { session_id, livestream_token } = await req.json();
+    const { session_id } = await req.json();
     if (!session_id) {
       return Response.json({ error: "session_id is required" }, { status: 400 });
     }
@@ -29,7 +35,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Board not found" }, { status: 404 });
     }
 
-    let role: "owner" | "editor" | "viewer" | null = null;
+    let role: "owner" | "editor" | null = null;
     if (session.owner_email && session.owner_email === user.email) {
       role = "owner";
     } else {
@@ -40,13 +46,6 @@ Deno.serve(async (req) => {
       );
       if (collabs.length > 0) {
         role = "editor";
-      } else if (
-        livestream_token &&
-        session.livestream_token &&
-        livestream_token === session.livestream_token &&
-        session.status === "active"
-      ) {
-        role = "viewer";
       }
     }
 

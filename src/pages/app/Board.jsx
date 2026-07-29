@@ -14,8 +14,10 @@ import { TacklyAIPanel } from "@/components/TacklyAIPanel";
 import { ShareDropdown } from "@/components/ShareDropdown";
 import { RatingModal } from "@/components/RatingModal";
 import { QuotaWarningModal } from "@/components/QuotaWarningModal";
+import { BoardLoadingScreen } from "@/components/BoardLoadingScreen";
 import { usePanZoom } from "@/lib/usePanZoom";
 import { computeLayout } from "@/lib/treeLayout";
+import { buildRevealOrder, nodeRevealDelay, edgeRevealDelay } from "@/lib/boardIntro";
 import { boardToSvg, boardToMarkdown, exportPng, exportSvg, exportMarkdown } from "@/lib/boardExport";
 import {
   ArrowLeft,
@@ -42,7 +44,7 @@ const SessionOp = base44.entities.SessionOp;
 const NodeNote = base44.entities.NodeNote;
 const Collaborator = base44.entities.Collaborator;
 
-// A non-owner (collaborator or livestream viewer) polls this instead of
+// A non-owner (collaborator) polls this instead of
 // subscribing to realtime — Base44 realtime only ever runs within the
 // subscriber's own RLS, which stays owner-only by design (see the RLS
 // security fix), so it can't be extended to someone else's board without
@@ -87,17 +89,21 @@ export default function Board() {
   const [showDeadEndHint, setShowDeadEndHint] = useState(false);
   const deadEndHintShownRef = useRef(false);
   const [notFound, setNotFound] = useState(false);
-  // null = owner (default, existing behavior). "editor"/"viewer" = accessed
-  // via get-board-access rather than owning the Session record directly.
+  // null = owner (default, existing behavior). "editor" = a collaborator,
+  // accessed via get-board-access rather than owning the Session record
+  // directly.
   const [sharedRole, setSharedRole] = useState(null);
   const [collaboratorCount, setCollaboratorCount] = useState(0);
   const [activeSpeakerEmail, setActiveSpeakerEmail] = useState(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [noteModalNodeId, setNoteModalNodeId] = useState(null);
   const [showRating, setShowRating] = useState(false);
-  // Nodes/edges present at first load render statically; later ones animate
+  // Nodes/edges present at first load "replay" pop in, staggered in
+  // creation order (see src/lib/boardIntro.js); later ones pop in instantly
+  // exactly as before.
   const initialNodeIds = useRef(null);
   const initialEdgeIds = useRef(null);
+  const initialOrderRef = useRef(null);
   const lastSeqRef = useRef(0);
   const appliedOpsRef = useRef(new Set());
   const processingRef = useRef(false);
@@ -394,6 +400,7 @@ export default function Board() {
     if (initialNodeIds.current === null) {
       initialNodeIds.current = ids;
       initialEdgeIds.current = new Set(e.map((x) => x.id));
+      initialOrderRef.current = buildRevealOrder(n);
     }
     return s;
   }, [sessionId]);
@@ -410,10 +417,8 @@ export default function Board() {
   // the rest of the visit. This was a real, shipped bug (see FINDINGS.md)
   // that made solo sessions feel "extremely slow" after a transient hiccup.
   const loadShared = useCallback(async () => {
-    const livestreamToken = searchParams.get("live") || undefined;
     const res = await base44.functions.invoke("get-board-access", {
       session_id: sessionId,
-      livestream_token: livestreamToken,
     });
     const { role, session: s, nodes: allNodes, edges: allEdges, utterances: u, notes } = res.data;
     const n = allNodes.filter((x) => !x.hidden);
@@ -434,12 +439,13 @@ export default function Board() {
     if (initialNodeIds.current === null) {
       initialNodeIds.current = ids;
       initialEdgeIds.current = new Set(allEdges.map((x) => x.id));
+      initialOrderRef.current = buildRevealOrder(n);
     }
     // Only a genuine non-owner role ever switches the board into
     // shared/polling mode — see the comment above.
     if (role !== "owner") setSharedRole(role);
     return s;
-  }, [sessionId, searchParams]);
+  }, [sessionId]);
 
   // Initial load + realtime ops subscription
   useEffect(() => {
@@ -474,9 +480,9 @@ export default function Board() {
   }, [sessionId, loadInitial, loadShared, applyOp]);
 
   // Shared-access polling — replaces the owner's realtime mechanism with a
-  // periodic full-snapshot refresh for a non-owner (editor or livestream
-  // viewer), since their own realtime subscription can't see owner-scoped
-  // rows. Never runs for the owner's own view.
+  // periodic full-snapshot refresh for a non-owner (an editor/collaborator),
+  // since their own realtime subscription can't see owner-scoped rows.
+  // Never runs for the owner's own view.
   useEffect(() => {
     if (!sharedRole) return;
     const interval = setInterval(() => {
@@ -660,11 +666,10 @@ export default function Board() {
   useEffect(() => () => clearTimeout(justTackledTimerRef.current), []);
 
   const isLive = session?.status === "active";
-  const isViewer = sharedRole === "viewer";
-  const isMicLive = isLive && !isViewer && (session?.capture_source === "mic_live" || micContinuing);
-  const isBotLive = isLive && !isViewer && session?.capture_source === "bot_live" && !micContinuing;
+  const isMicLive = isLive && (session?.capture_source === "mic_live" || micContinuing);
+  const isBotLive = isLive && session?.capture_source === "bot_live" && !micContinuing;
   const canContinueByVoice =
-    !isViewer && session?.capture_source === "bot_live" && session?.status === "complete" && !micContinuing;
+    session?.capture_source === "bot_live" && session?.status === "complete" && !micContinuing;
   // A completed personal/import thread has no hold-to-talk bar and no
   // "continue by voice" alternative (that's bot-only) — previously that just
   // left an empty area at the bottom with no indication anything's final.
@@ -1178,6 +1183,10 @@ export default function Board() {
     );
   }
 
+  if (!session) {
+    return <BoardLoadingScreen />;
+  }
+
   const selectedNode = nodes.find((n) => n.id === selectedId) || null;
   const processedCount = utterances.filter((u) => u.processed).length;
   const panelOpen = Boolean(selectedNode) || showTranscript;
@@ -1316,12 +1325,13 @@ export default function Board() {
               positions={positions}
               sizes={sizes}
               treeEdgeIds={treeEdgeIds}
-              animateIds={
-                initialEdgeIds.current
-                  ? new Set(
-                      edges.filter((e) => !initialEdgeIds.current.has(e.id)).map((e) => e.id)
-                    )
-                  : null
+              animateDelays={
+                new Map(
+                  edges.map((e) => [
+                    e.id,
+                    edgeRevealDelay(initialOrderRef.current, initialEdgeIds.current, e),
+                  ])
+                )
               }
               width={CANVAS_W}
               height={CANVAS_H}
@@ -1332,9 +1342,9 @@ export default function Board() {
                 <div
                   key={node.id}
                   data-node
-                  onPointerDown={isViewer ? undefined : (e) => startNodeDrag(e, node.id)}
+                  onPointerDown={(e) => startNodeDrag(e, node.id)}
                   className={`absolute touch-none ${
-                    isViewer ? "cursor-default" : dragPos?.id === node.id ? "cursor-grabbing" : "cursor-grab"
+                    dragPos?.id === node.id ? "cursor-grabbing" : "cursor-grab"
                   }`}
                   style={{ left: p.x, top: p.y }}
                 >
@@ -1346,9 +1356,10 @@ export default function Board() {
                     node={node}
                     noteCount={noteCounts[node.id] || 0}
                     forming={!!node.provisional && !settledIds.has(node.id)}
-                    animate={initialNodeIds.current && !initialNodeIds.current.has(node.id)}
+                    animate
+                    delayMs={nodeRevealDelay(initialOrderRef.current, node.id)}
                     className={selectedId === node.id ? "shadow-brutal-lg ring-2 ring-periwinkle" : ""}
-                    onNotesClick={isViewer ? undefined : (id) => setNoteModalNodeId(id)}
+                    onNotesClick={(id) => setNoteModalNodeId(id)}
                     onClick={() => {
                       // Suppress the click that follows a drag
                       if (draggedRef.current) {

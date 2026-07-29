@@ -44,7 +44,16 @@ const STATUS_LABELS = {
 };
 
 export const NodeCard = forwardRef(function NodeCard(
-  { node, onClick, onNotesClick, animate = false, className = "", noteCount = 0, forming = false },
+  {
+    node,
+    onClick,
+    onNotesClick,
+    animate = false,
+    delayMs = 0,
+    className = "",
+    noteCount = 0,
+    forming = false,
+  },
   ref
 ) {
   const style = NODE_TYPE_STYLES[node.type] || NODE_TYPE_STYLES.idea;
@@ -68,7 +77,10 @@ export const NodeCard = forwardRef(function NodeCard(
           onClick?.(e);
         }
       }}
-      style={{ "--note-rotation": `${node.rotation_deg || 0}deg` }}
+      style={{
+        "--note-rotation": `${node.rotation_deg || 0}deg`,
+        ...(animate && delayMs > 0 ? { animationDelay: `${delayMs}ms` } : {}),
+      }}
       className={`group/node relative w-56 cursor-pointer rounded-note border-2 border-ink p-3.5 text-left shadow-brutal outline-none transition-all [transform:rotate(var(--note-rotation))] hover:shadow-brutal-lg hover:!opacity-100 focus-visible:shadow-brutal-lg ${
         dashed ? "border-dashed" : ""
       } ${forming ? "animate-forming" : ""} ${style.muted ? "opacity-70" : ""} ${style.fill} ${animate ? "animate-pop-in" : ""} ${className}`}

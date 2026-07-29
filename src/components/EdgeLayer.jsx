@@ -23,7 +23,7 @@ export function EdgeLayer({
   edges,
   positions,
   sizes,
-  animateIds,
+  animateDelays,
   treeEdgeIds,
   width,
   height,
@@ -86,7 +86,12 @@ export function EdgeLayer({
               strokeDasharray={isTree ? undefined : "2 7"}
               opacity={isTree ? 0.32 : 0.16}
               pathLength="1"
-              className={animateIds?.has(edge.id) ? "edge-animate" : ""}
+              className={animateDelays?.has(edge.id) ? "edge-animate" : ""}
+              style={
+                animateDelays?.has(edge.id)
+                  ? { animationDelay: `${animateDelays.get(edge.id)}ms` }
+                  : undefined
+              }
             />
             {label && (
               <g opacity={isTree ? 0.85 : 0.55}>

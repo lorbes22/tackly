@@ -39,8 +39,8 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Board not found" }, { status: 404 });
     }
 
-    // Only the owner or an active collaborator may hold the mic — a
-    // livestream viewer has no write access at all.
+    // Only the owner or an active collaborator may hold the mic — a public
+    // read-only share link has no write access at all.
     const isOwner = session.owner_email && session.owner_email === user.email;
     if (!isOwner) {
       const collabs = await db.Collaborator.filter(

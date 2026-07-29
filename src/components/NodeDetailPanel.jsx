@@ -42,13 +42,25 @@ export function NodeDetailPanel({
   onAddNote,
   onDeleteNote,
   onHideNode,
+  readOnly = false,
+  // Public/unauthenticated callers (the shared read-only board) already have
+  // the whole session's links/notes in memory and can't make the per-node
+  // authenticated fetch below at all — pass pre-filtered data instead and
+  // the fetch effects are skipped entirely. Owner/editor callers omit these
+  // and get the original per-node fetch, unchanged.
+  preloadedLinkedUtteranceIds = null,
+  preloadedNotes = null,
 }) {
-  const [linkedUtteranceIds, setLinkedUtteranceIds] = useState(null);
-  const [notes, setNotes] = useState(null);
+  const [linkedUtteranceIds, setLinkedUtteranceIds] = useState(preloadedLinkedUtteranceIds);
+  const [notes, setNotes] = useState(preloadedNotes);
   const [draftNote, setDraftNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
 
   useEffect(() => {
+    if (preloadedLinkedUtteranceIds) {
+      setLinkedUtteranceIds(preloadedLinkedUtteranceIds);
+      return;
+    }
     let cancelled = false;
     setLinkedUtteranceIds(null);
     base44.entities.NodeUtteranceLink.filter({ node_id: node.id }, "created_date", 100)
@@ -59,10 +71,14 @@ export function NodeDetailPanel({
     return () => {
       cancelled = true;
     };
-  }, [node.id]);
+  }, [node.id, preloadedLinkedUtteranceIds]);
 
   // Load notes when the node has any (the board tells us via noteCount)
   useEffect(() => {
+    if (preloadedNotes) {
+      setNotes(preloadedNotes);
+      return;
+    }
     let cancelled = false;
     if (noteCount === 0) {
       setNotes([]);
@@ -76,7 +92,7 @@ export function NodeDetailPanel({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.id]);
+  }, [node.id, preloadedNotes]);
 
   const submitNote = async (e) => {
     e.preventDefault();
@@ -93,7 +109,7 @@ export function NodeDetailPanel({
   };
 
   const style = NODE_TYPE_STYLES[node.type] || NODE_TYPE_STYLES.idea;
-  const action = statusAction(node);
+  const action = readOnly ? null : statusAction(node);
 
   const excerpts =
     linkedUtteranceIds === null
@@ -211,6 +227,7 @@ export function NodeDetailPanel({
                   <NoteItem
                     key={n.id}
                     note={n}
+                    readOnly={readOnly}
                     onUpdated={(updated) =>
                       setNotes((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
                     }
@@ -223,23 +240,28 @@ export function NodeDetailPanel({
               </div>
             )
           )}
-          <form onSubmit={submitNote} className="mt-2 flex gap-2">
-            <input
-              type="text"
-              value={draftNote}
-              onChange={(e) => setDraftNote(e.target.value)}
-              placeholder="Add a note…"
-              className="h-9 flex-1 rounded-lg border border-line bg-paper px-2.5 text-sm placeholder:text-ink-faint focus:border-periwinkle"
-            />
-            <button
-              type="submit"
-              disabled={!draftNote.trim() || savingNote}
-              title="Add note"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-ink bg-periwinkle text-white shadow-brutal-sm transition-transform hover:-translate-y-px disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          </form>
+          {readOnly && notes !== null && notes.length === 0 && (
+            <p className="mt-2 text-sm text-ink-faint">No notes.</p>
+          )}
+          {!readOnly && (
+            <form onSubmit={submitNote} className="mt-2 flex gap-2">
+              <input
+                type="text"
+                value={draftNote}
+                onChange={(e) => setDraftNote(e.target.value)}
+                placeholder="Add a note…"
+                className="h-9 flex-1 rounded-lg border border-line bg-paper px-2.5 text-sm placeholder:text-ink-faint focus:border-periwinkle"
+              />
+              <button
+                type="submit"
+                disabled={!draftNote.trim() || savingNote}
+                title="Add note"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-ink bg-periwinkle text-white shadow-brutal-sm transition-transform hover:-translate-y-px disabled:opacity-50"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </form>
+          )}
         </section>
 
         <section className="mt-5">
@@ -272,16 +294,18 @@ export function NodeDetailPanel({
         </section>
       </div>
 
-      <div className="border-t border-line px-4 py-3">
-        <button
-          onClick={() => onHideNode?.(node.id)}
-          className="flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm font-medium text-ink-soft transition-colors hover:bg-note-coral hover:text-ink"
-          title="Remove this node from the board (its transcript memory is kept)"
-        >
-          <Trash2 className="h-4 w-4" />
-          Delete from board
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="border-t border-line px-4 py-3">
+          <button
+            onClick={() => onHideNode?.(node.id)}
+            className="flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm font-medium text-ink-soft transition-colors hover:bg-note-coral hover:text-ink"
+            title="Remove this node from the board (its transcript memory is kept)"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete from board
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { base44 } from "@/api/base44Client";
-import { Check, Copy, Link2, Loader2, Share2, Trash2, Users, X } from "lucide-react";
+import { Ban, Check, Copy, Link2, Loader2, RotateCcw, Share2, Trash2, Users, X } from "lucide-react";
 
 const Collaborator = base44.entities.Collaborator;
 const Session = base44.entities.Session;
@@ -12,13 +12,14 @@ function randomToken() {
 }
 
 // Owner-only board sharing config — a clickable text link (not a full
-// button, per request) next to the AI Assistant button, opening a dropdown
-// with two independent things: a livestream watch-link (view-only, only
-// works while the session is still active) and Collaborate (up to 3 named,
-// full-parity collaborators). Both live entirely client-side against
+// button) next to the AI Assistant button, opening a dropdown with two
+// independent things: Collaborate (up to 3 named, full-parity collaborators)
+// and a public read-only Share link (anyone with the link, no account
+// needed — only mintable once the session has ended, so a live capture is
+// never exposed mid-recording). Both live entirely client-side against
 // existing owner-scoped RLS + the invite-collaborator function — no new
-// backend needed for the livestream link itself since Session.update is
-// already owner-permitted.
+// backend needed for the share link itself since Session.update is already
+// owner-permitted.
 export function ShareDropdown({ session, onSessionChange }) {
   const [open, setOpen] = useState(false);
   const [collaborators, setCollaborators] = useState(null);
@@ -27,7 +28,7 @@ export function ShareDropdown({ session, onSessionChange }) {
   const [inviteError, setInviteError] = useState("");
   const [removingId, setRemovingId] = useState(null);
   const [copied, setCopied] = useState(false);
-  const [creatingLink, setCreatingLink] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -46,27 +47,41 @@ export function ShareDropdown({ session, onSessionChange }) {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [open]);
 
-  const liveUrl = session.livestream_token
-    ? `${window.location.origin}/app/board/${session.id}?live=${session.livestream_token}`
+  const hasEnded = session.status !== "active";
+  const shareUrl = session.public_share_token
+    ? `${window.location.origin}/shared/${session.public_share_token}`
     : null;
+  const revoked = !!session.public_share_revoked;
 
-  const createLink = async () => {
-    setCreatingLink(true);
+  const createShareLink = async () => {
+    setLinkBusy(true);
     try {
       const token = randomToken();
-      await Session.update(session.id, { livestream_token: token });
-      onSessionChange({ ...session, livestream_token: token });
+      await Session.update(session.id, { public_share_token: token, public_share_revoked: false });
+      onSessionChange({ ...session, public_share_token: token, public_share_revoked: false });
     } catch {
       // best-effort — the button just stays available to retry
     } finally {
-      setCreatingLink(false);
+      setLinkBusy(false);
+    }
+  };
+
+  const setRevoked = async (value) => {
+    setLinkBusy(true);
+    try {
+      await Session.update(session.id, { public_share_revoked: value });
+      onSessionChange({ ...session, public_share_revoked: value });
+    } catch {
+      // best-effort
+    } finally {
+      setLinkBusy(false);
     }
   };
 
   const copyLink = async () => {
-    if (!liveUrl) return;
+    if (!shareUrl) return;
     try {
-      await navigator.clipboard.writeText(liveUrl);
+      await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -113,49 +128,12 @@ export function ShareDropdown({ session, onSessionChange }) {
         className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-ink-soft transition-colors hover:bg-paper-sunken hover:text-ink"
       >
         <Share2 className="h-3.5 w-3.5" />
-        Livestream / Share
+        Add Collaborator / Share
       </button>
 
       {open && (
         <div className="absolute right-0 top-full z-30 mt-2 w-80 rounded-2xl border-2 border-ink bg-paper-raised p-4 shadow-brutal animate-fade-up">
           <div>
-            <div className="flex items-center gap-2 text-ink">
-              <Link2 className="h-4 w-4" />
-              <p className="text-sm font-bold">Livestream</p>
-            </div>
-            <p className="mt-1 text-xs text-ink-soft">
-              Anyone with this link (and a Tackly account) can watch live, read-only — it stops
-              working the moment this session ends.
-            </p>
-            {liveUrl ? (
-              <div className="mt-2 flex items-center gap-1.5">
-                <input
-                  readOnly
-                  value={liveUrl}
-                  onClick={(e) => e.target.select()}
-                  className="h-8 flex-1 truncate rounded-lg border border-line bg-paper px-2 text-xs text-ink-soft"
-                />
-                <button
-                  onClick={copyLink}
-                  title="Copy link"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-ink bg-paper-raised text-ink shadow-brutal-sm transition-transform hover:-translate-y-px"
-                >
-                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={createLink}
-                disabled={creatingLink}
-                className="mt-2 flex h-8 items-center gap-1.5 rounded-lg border-2 border-ink bg-paper-raised px-3 text-xs font-semibold text-ink shadow-brutal-sm transition-transform hover:-translate-y-px disabled:opacity-50"
-              >
-                {creatingLink ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
-                Create watch link
-              </button>
-            )}
-          </div>
-
-          <div className="mt-4 border-t border-line pt-4">
             <div className="flex items-center gap-2 text-ink">
               <Users className="h-4 w-4" />
               <p className="text-sm font-bold">Collaborate</p>
@@ -213,6 +191,77 @@ export function ShareDropdown({ session, onSessionChange }) {
                 <X className="mt-0.5 h-3 w-3 shrink-0" />
                 {inviteError}
               </p>
+            )}
+          </div>
+
+          <div className="mt-4 border-t border-line pt-4">
+            <div className="flex items-center gap-2 text-ink">
+              <Link2 className="h-4 w-4" />
+              <p className="text-sm font-bold">Share link</p>
+            </div>
+
+            {!hasEnded ? (
+              <p className="mt-1 text-xs text-ink-soft">
+                Available once this session ends — great for sharing the notes with whoever you just met with.
+              </p>
+            ) : (
+              <>
+                <p className="mt-1 text-xs text-ink-soft">
+                  Read-only. Works for anyone with the link, no Tackly account needed. Revoke it anytime.
+                </p>
+                {shareUrl ? (
+                  <div className="mt-2">
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        readOnly
+                        value={shareUrl}
+                        onClick={(e) => e.target.select()}
+                        className="h-8 flex-1 truncate rounded-lg border border-line bg-paper px-2 text-xs text-ink-soft"
+                      />
+                      <button
+                        onClick={copyLink}
+                        title="Copy link"
+                        disabled={revoked}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-ink bg-paper-raised text-ink shadow-brutal-sm transition-transform hover:-translate-y-px disabled:opacity-50"
+                      >
+                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                    {revoked ? (
+                      <button
+                        onClick={() => setRevoked(false)}
+                        disabled={linkBusy}
+                        className="mt-2 flex h-8 items-center gap-1.5 rounded-lg border-2 border-ink bg-paper-raised px-3 text-xs font-semibold text-ink shadow-brutal-sm transition-transform hover:-translate-y-px disabled:opacity-50"
+                      >
+                        {linkBusy ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        )}
+                        Re-enable link
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setRevoked(true)}
+                        disabled={linkBusy}
+                        className="mt-2 flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-ink-soft transition-colors hover:bg-note-coral hover:text-ink disabled:opacity-50"
+                      >
+                        {linkBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />}
+                        Revoke access
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    onClick={createShareLink}
+                    disabled={linkBusy}
+                    className="mt-2 flex h-8 items-center gap-1.5 rounded-lg border-2 border-ink bg-paper-raised px-3 text-xs font-semibold text-ink shadow-brutal-sm transition-transform hover:-translate-y-px disabled:opacity-50"
+                  >
+                    {linkBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                    Create share link
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

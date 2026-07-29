@@ -15,6 +15,7 @@ import ResetPassword from "@/pages/auth/ResetPassword";
 import AppLayout from "@/layouts/AppLayout";
 import Home from "@/pages/app/Home";
 import Board from "@/pages/app/Board";
+import SharedBoard from "@/pages/SharedBoard";
 import NewSession from "@/pages/app/NewSession";
 import SearchPage from "@/pages/app/SearchPage";
 import SettingsPage from "@/pages/app/SettingsPage";
@@ -54,6 +55,9 @@ export default function App() {
               </RequireAuth>
             }
           />
+
+          {/* Public, unauthenticated read-only board view — anyone with the link */}
+          <Route path="/shared/:token" element={<SharedBoard />} />
 
           <Route
             path="/app"

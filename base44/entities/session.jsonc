@@ -85,9 +85,14 @@
       "minimum": 0,
       "description": "Running estimated Anthropic API cost (USD) for this session — Tier-1/Tier-2/partial-guess calls each add their own call's cost via $inc as they happen (see base44/shared/claude.ts estimateCostUsd). Estimated from real per-call token usage x published per-model pricing, not billed truth — good for relative comparisons and admin cost/min, not a guaranteed match to the Anthropic invoice."
     },
-    "livestream_token": {
+    "public_share_token": {
       "type": "string",
-      "description": "Random per-session token minted the first time the owner asks for a 'watch live' link. Grants read-only viewer access via the share-access function ONLY while status is 'active' — the link stops working the moment the session ends, by design (no separate on/off toggle needed)."
+      "description": "Random per-session token minted when the owner creates a public read-only share link. Grants unauthenticated read access to this session's transcript/board via the get-shared-board function — works for anyone with the link, no Tackly account required. Can only be created once the session has ended (status is not 'active'); once created the token is permanent until the owner revokes it (see public_share_revoked)."
+    },
+    "public_share_revoked": {
+      "type": "boolean",
+      "default": false,
+      "description": "Owner-controlled kill switch for public_share_token — set true to instantly disable the public link without losing the token, so re-enabling restores the same URL."
     },
     "active_speaker_email": {
       "type": "string",
