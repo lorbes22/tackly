@@ -122,20 +122,20 @@ export default function SharedBoard() {
     );
   }
 
-  if (!state) {
-    return <BoardLoadingScreen label="Loading shared board…" />;
-  }
-
-  const { session } = state;
+  // Not an early return — see BoardLoadingScreen's comment for why the
+  // canvas div (and its viewportRef) needs to mount on the very first
+  // render regardless of whether `state` has arrived yet.
+  const session = state?.session;
   const selectedNode = nodes.find((n) => n.id === selectedId) || null;
   const panelOpen = Boolean(selectedNode) || showTranscript;
 
   return (
-    <div className="flex h-dvh flex-col bg-paper">
+    <div className="relative flex h-dvh flex-col bg-paper">
+      {!state && <BoardLoadingScreen label="Loading shared board…" className="absolute inset-0 z-40" />}
       <header className="z-20 flex h-12 shrink-0 items-center justify-between border-b border-line bg-paper/90 px-3 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           <Logo to="/" />
-          <span className="truncate text-sm font-medium text-ink">{session.title}</span>
+          <span className="truncate text-sm font-medium text-ink">{session?.title || "…"}</span>
           <span className="hidden shrink-0 rounded-full border border-line bg-paper-sunken px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-ink-faint sm:inline">
             Shared · read-only
           </span>

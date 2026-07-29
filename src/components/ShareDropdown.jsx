@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { base44 } from "@/api/base44Client";
-import { Ban, Check, Copy, Link2, Loader2, RotateCcw, Share2, Trash2, Users, X } from "lucide-react";
+import {
+  Ban,
+  Check,
+  Copy,
+  Link2,
+  Loader2,
+  RotateCcw,
+  Share2,
+  Square,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 
 const Collaborator = base44.entities.Collaborator;
 const Session = base44.entities.Session;
@@ -20,7 +32,7 @@ function randomToken() {
 // existing owner-scoped RLS + the invite-collaborator function — no new
 // backend needed for the share link itself since Session.update is already
 // owner-permitted.
-export function ShareDropdown({ session, onSessionChange }) {
+export function ShareDropdown({ session, onSessionChange, onEndSession }) {
   const [open, setOpen] = useState(false);
   const [collaborators, setCollaborators] = useState(null);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -29,6 +41,7 @@ export function ShareDropdown({ session, onSessionChange }) {
   const [removingId, setRemovingId] = useState(null);
   const [copied, setCopied] = useState(false);
   const [linkBusy, setLinkBusy] = useState(false);
+  const [endingAndSharing, setEndingAndSharing] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -53,16 +66,41 @@ export function ShareDropdown({ session, onSessionChange }) {
     : null;
   const revoked = !!session.public_share_revoked;
 
-  const createShareLink = async () => {
+  // baseSession lets endAndShare below pass a freshly re-fetched session
+  // rather than this component's own (possibly still-stale, pre-refresh)
+  // `session` prop — see endAndShare's comment for why that race matters.
+  const createShareLink = async (baseSession = session) => {
     setLinkBusy(true);
     try {
       const token = randomToken();
-      await Session.update(session.id, { public_share_token: token, public_share_revoked: false });
-      onSessionChange({ ...session, public_share_token: token, public_share_revoked: false });
+      await Session.update(baseSession.id, { public_share_token: token, public_share_revoked: false });
+      onSessionChange({ ...baseSession, public_share_token: token, public_share_revoked: false });
     } catch {
       // best-effort — the button just stays available to retry
     } finally {
       setLinkBusy(false);
+    }
+  };
+
+  // Lets an owner end the session and get a share link in one action,
+  // rather than being blocked with no button at all until they separately
+  // end it from the live control bar. Reuses Board.jsx's real end-session
+  // flow (flushes queued utterances, stops the Recall bot if needed, etc.)
+  // via the onEndSession prop, not a bare status flip.
+  const endAndShare = async () => {
+    if (!onEndSession) return;
+    setEndingAndSharing(true);
+    try {
+      await onEndSession();
+      // onEndSession resolves once Board.jsx's own session state is
+      // updated, but this component's `session` prop may not have
+      // re-rendered in yet by this exact point — re-fetch fresh rather
+      // than risk createShareLink merging the share-link fields onto a
+      // stale (still "active") session and clobbering the real status.
+      const fresh = await Session.get(session.id);
+      await createShareLink(fresh);
+    } finally {
+      setEndingAndSharing(false);
     }
   };
 
@@ -133,12 +171,14 @@ export function ShareDropdown({ session, onSessionChange }) {
       </button>
 
       {open && (
-        // Fixed to the viewport's top-right rather than absolute-anchored to
-        // this button specifically — Share isn't the rightmost item in the
-        // header (AI Assistant/panel/export sit to its right), so an
+        // Mobile (default): fixed to the viewport's top-right rather than
+        // anchored to this button specifically — Share isn't the rightmost
+        // header item (AI Assistant/panel/export sit to its right), so an
         // absolute right-0 anchor put a 320px panel mostly off-screen on
         // narrow viewports where the button itself sits left-of-center.
-        <div className="fixed right-3 top-14 z-30 w-80 max-w-[calc(100vw-1.5rem)] rounded-2xl border-2 border-ink bg-paper-raised p-4 shadow-brutal animate-fade-up">
+        // Desktop (sm+): plenty of room either way, so it opens directly
+        // under the button instead, which reads better anchored there.
+        <div className="fixed right-3 top-14 z-30 w-80 max-w-[calc(100vw-1.5rem)] rounded-2xl border-2 border-ink bg-paper-raised p-4 shadow-brutal animate-fade-up sm:absolute sm:right-0 sm:top-full sm:mt-2">
           <div>
             <div className="flex items-center gap-2 text-ink">
               <Users className="h-4 w-4" />
@@ -207,9 +247,23 @@ export function ShareDropdown({ session, onSessionChange }) {
             </div>
 
             {!hasEnded ? (
-              <p className="mt-1 text-xs text-ink-soft">
-                Available once this session ends — great for sharing the notes with whoever you just met with.
-              </p>
+              <div className="mt-1">
+                <p className="text-xs text-ink-soft">
+                  This session is still active — end it to create a read-only link you can share.
+                </p>
+                <button
+                  onClick={endAndShare}
+                  disabled={endingAndSharing || !onEndSession}
+                  className="mt-2 flex h-8 items-center gap-1.5 rounded-lg border-2 border-ink bg-paper-raised px-3 text-xs font-semibold text-ink shadow-brutal-sm transition-transform hover:-translate-y-px disabled:opacity-50"
+                >
+                  {endingAndSharing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Square className="h-3.5 w-3.5" />
+                  )}
+                  End session &amp; share
+                </button>
+              </div>
             ) : (
               <>
                 <p className="mt-1 text-xs text-ink-soft">

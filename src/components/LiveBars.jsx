@@ -201,7 +201,8 @@ export function MicBar({
           ) : (
             <>
               <Mic className="h-5 w-5" />
-              Hold to talk (or hold Space)
+              <span className="hidden sm:inline">Hold to talk (or hold Space)</span>
+              <span className="sm:hidden">Hold to talk</span>
             </>
           )}
         </button>

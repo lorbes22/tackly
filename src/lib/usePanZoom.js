@@ -80,6 +80,13 @@ export function usePanZoom({ viewportRef, contentBounds }) {
       // Only start a gesture on empty canvas (targets set data-pan-surface)
       if (!e.target.closest?.("[data-pan-surface]")) return;
       if (e.target.closest?.("[data-node]")) return;
+      // Zoom/fit/auto-follow controls live inside the pan surface too — a
+      // press-drag-release on one of them (even a few px of jitter, which
+      // is normal for a real click) was also starting a pan/capture the
+      // pointer to the canvas, which could suppress the button's own click
+      // entirely on touch devices. Any button/link/input should never
+      // start a canvas gesture.
+      if (e.target.closest?.("button, a, input, textarea, select")) return;
       pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       e.currentTarget.setPointerCapture?.(e.pointerId);
 

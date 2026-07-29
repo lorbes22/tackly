@@ -13,6 +13,7 @@ const Utterance = base44.entities.Utterance;
 const NodeNote = base44.entities.NodeNote;
 const SessionOp = base44.entities.SessionOp;
 const Collaborator = base44.entities.Collaborator;
+const NodeUtteranceLink = base44.entities.NodeUtteranceLink;
 
 function formatDate(iso) {
   if (!iso) return "";
@@ -44,30 +45,42 @@ const captureKind = {
   import: { label: "Imported transcript", Icon: FileText },
 };
 
-function SessionCard({ session, collaboratorCount, confirming, deleting, onAskDelete, onCancelDelete, onConfirmDelete }) {
+function SessionCard({
+  session,
+  collaboratorCount,
+  confirming,
+  deleting,
+  deleteError,
+  onAskDelete,
+  onCancelDelete,
+  onConfirmDelete,
+}) {
   const { label, Icon } = captureKind[session.capture_source] || captureKind.mic_live;
   const duration = formatDuration(session.billed_ms);
 
   if (confirming) {
     return (
-      <div className="flex items-center gap-4 rounded-2xl border-2 border-ink bg-note-coral p-4 shadow-note">
-        <p className="min-w-0 flex-1 text-sm font-medium text-ink">
-          Delete "{session.title}" forever? This can't be undone.
-        </p>
-        <button
-          onClick={onCancelDelete}
-          disabled={deleting}
-          className="h-9 shrink-0 rounded-lg border-2 border-ink bg-paper-raised px-3 text-sm font-semibold text-ink transition-colors hover:bg-paper-sunken disabled:opacity-50"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={onConfirmDelete}
-          disabled={deleting}
-          className="h-9 shrink-0 rounded-lg border-2 border-ink bg-ink px-3 text-sm font-semibold text-paper transition-colors hover:bg-ink/85 disabled:opacity-50"
-        >
-          {deleting ? "Deleting…" : "Delete forever"}
-        </button>
+      <div className="rounded-2xl border-2 border-ink bg-note-coral p-4 shadow-note">
+        <div className="flex items-center gap-4">
+          <p className="min-w-0 flex-1 text-sm font-medium text-ink">
+            Delete "{session.title}" forever? This can't be undone.
+          </p>
+          <button
+            onClick={onCancelDelete}
+            disabled={deleting}
+            className="h-9 shrink-0 rounded-lg border-2 border-ink bg-paper-raised px-3 text-sm font-semibold text-ink transition-colors hover:bg-paper-sunken disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirmDelete}
+            disabled={deleting}
+            className="h-9 shrink-0 rounded-lg border-2 border-ink bg-ink px-3 text-sm font-semibold text-paper transition-colors hover:bg-ink/85 disabled:opacity-50"
+          >
+            {deleting ? "Deleting…" : "Delete forever"}
+          </button>
+        </div>
+        {deleteError && <p className="mt-2 text-xs font-medium text-ink">{deleteError}</p>}
       </div>
     );
   }
@@ -164,6 +177,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [confirmId, setConfirmId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [deleteError, setDeleteError] = useState(null);
   const [leavingId, setLeavingId] = useState(null);
   const [collaboratorCounts, setCollaboratorCounts] = useState({});
 
@@ -212,36 +226,55 @@ export default function Home() {
 
   // Deletes a thread and everything hanging off it. There's no cascade at
   // the DB level, so this walks the same tables Board.jsx reads from
-  // (nodes, edges touching those nodes, utterances, notes, ops) before
-  // removing the Session itself — all under the owner's own RLS.
+  // (nodes, edges touching those nodes, utterances, notes, ops, links, plus
+  // any Collaborator grants) before removing the Session itself — all under
+  // the owner's own RLS.
+  //
+  // Uses allSettled rather than all: a single child row failing to delete
+  // (a stray permission edge case, a transient rate limit on a large fan-out
+  // of parallel deletes for a big session) used to abort the whole Promise
+  // chain via Promise.all's fail-fast behavior, so Session.delete itself was
+  // never reached — the thread would just silently stay in the list with no
+  // error shown. Base44 has no real FK cascade here, so a few orphaned child
+  // rows left behind is a much better failure mode than an undeletable
+  // thread; Session.delete is now always attempted, and only ITS failure
+  // (the one thing that actually matters — did the thread disappear) is
+  // surfaced to the user.
   const deleteThread = useCallback(async (session) => {
     setDeletingId(session.id);
+    setDeleteError(null);
     try {
-      const [nodes, edges, utterances, notes, ops] = await Promise.all([
+      const [nodes, edges, utterances, notes, ops, links, collabs] = await Promise.all([
         Node.filter({ session_id: session.id }, "created_date", 2000),
         NodeEdge.filter({}, "created_date", 3000),
         Utterance.filter({ session_id: session.id }, "start_ms", 3000),
         NodeNote.filter({ session_id: session.id }, "-created_date", 2000),
         SessionOp.filter({ session_id: session.id }, "-seq", 5000),
+        NodeUtteranceLink.filter({}, "created_date", 5000),
+        Collaborator.filter({ session_id: session.id }, "-invited_at", 10),
       ]);
       const nodeIds = new Set(nodes.map((n) => n.id));
       const relatedEdges = edges.filter(
         (e) => nodeIds.has(e.from_node_id) || nodeIds.has(e.to_node_id)
       );
-      await Promise.all([
+      const relatedLinks = links.filter((l) => nodeIds.has(l.node_id));
+
+      await Promise.allSettled([
         ...relatedEdges.map((e) => NodeEdge.delete(e.id)),
         ...notes.map((n) => NodeNote.delete(n.id)),
         ...ops.map((o) => SessionOp.delete(o.id)),
         ...utterances.map((u) => Utterance.delete(u.id)),
+        ...relatedLinks.map((l) => NodeUtteranceLink.delete(l.id)),
+        ...collabs.map((c) => Collaborator.delete(c.id)),
       ]);
-      await Promise.all(nodes.map((n) => Node.delete(n.id)));
+      await Promise.allSettled(nodes.map((n) => Node.delete(n.id)));
       await Session.delete(session.id);
       setSessions((prev) => prev.filter((s) => s.id !== session.id));
-    } catch {
-      // best-effort; the thread just stays in the list if something failed
+      setConfirmId(null);
+    } catch (err) {
+      setDeleteError(err.response?.data?.error || err.message || "Couldn't delete this thread — try again.");
     } finally {
       setDeletingId(null);
-      setConfirmId(null);
     }
   }, []);
 
@@ -376,11 +409,16 @@ export default function Home() {
                 collaboratorCount={collaboratorCounts[s.id] || 0}
                 confirming={confirmId === s.id}
                 deleting={deletingId === s.id}
+                deleteError={confirmId === s.id ? deleteError : null}
                 onAskDelete={(e) => {
                   e.preventDefault();
+                  setDeleteError(null);
                   setConfirmId(s.id);
                 }}
-                onCancelDelete={() => setConfirmId(null)}
+                onCancelDelete={() => {
+                  setDeleteError(null);
+                  setConfirmId(null);
+                }}
                 onConfirmDelete={() => deleteThread(s)}
               />
             ))}

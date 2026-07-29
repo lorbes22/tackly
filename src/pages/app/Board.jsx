@@ -358,10 +358,22 @@ export default function Board() {
     }
   }, []);
 
-  // Session record refresh (status chip, live bars) — board state untouched
+  // Session record refresh (status chip, live bars) — board state untouched.
+  // Guarded against out-of-order responses: the bot-watching 3s poll below
+  // and this same function's own call at the end of the wrap-up pass can
+  // both be in flight around the moment a meeting ends. If the poll's
+  // request happened to resolve AFTER the wrap-up's (plain network timing,
+  // nothing to do with which one started first), it would silently
+  // overwrite the freshly-"complete" session with a stale "processing"
+  // snapshot — which is exactly why the rating popup only ever showed up
+  // after a manual revisit (a fresh loadInitial() has no such race) instead
+  // of immediately when the meeting actually ended. Only the LATEST
+  // outstanding call is allowed to apply its result.
+  const sessionFetchSeqRef = useRef(0);
   const refreshSession = useCallback(async () => {
+    const seq = ++sessionFetchSeqRef.current;
     const s = await Session.get(sessionId);
-    setSession(s);
+    if (seq === sessionFetchSeqRef.current) setSession(s);
     return s;
   }, [sessionId]);
 
@@ -1183,16 +1195,17 @@ export default function Board() {
     );
   }
 
-  if (!session) {
-    return <BoardLoadingScreen />;
-  }
-
   const selectedNode = nodes.find((n) => n.id === selectedId) || null;
   const processedCount = utterances.filter((u) => u.processed).length;
   const panelOpen = Boolean(selectedNode) || showTranscript;
 
   return (
-    <div className="flex h-dvh flex-col bg-paper">
+    <div className="relative flex h-dvh flex-col bg-paper">
+      {/* Overlay, not an early return — the canvas div below (and its
+          viewportRef) must mount on the very first render so usePanZoom's
+          wheel listener attaches to the real node instead of a still-null
+          ref. See BoardLoadingScreen's comment for the full story. */}
+      {!session && <BoardLoadingScreen className="absolute inset-0 z-40" />}
       <header className="z-20 flex h-12 shrink-0 items-center justify-between border-b border-line bg-paper/90 px-3 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           <Link
@@ -1227,7 +1240,11 @@ export default function Board() {
             </span>
           )}
           {!sharedRole && session && (
-            <ShareDropdown session={session} onSessionChange={setSession} />
+            <ShareDropdown
+              session={session}
+              onSessionChange={setSession}
+              onEndSession={endLiveSession}
+            />
           )}
           <TacklyAIPanel
             sessionId={sessionId}
@@ -1488,7 +1505,7 @@ export default function Board() {
                 </div>
               </div>
             )}
-            <div className="absolute inset-x-0 bottom-5 z-10 mx-auto flex w-fit items-center gap-3">
+            <div className="absolute inset-x-0 bottom-5 z-10 mx-auto flex w-fit flex-col items-center gap-2 sm:flex-row sm:gap-3">
               <div className="flex h-12 items-center gap-2 rounded-xl border-2 border-ink bg-paper-sunken px-6 text-sm font-bold text-ink-soft shadow-brutal-sm">
                 This thread has been tackled 👀
               </div>
