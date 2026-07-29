@@ -19,6 +19,7 @@ Deno.serve(async (req) => {
         email: u.email,
         role: u.role,
         plan_id: u.plan_id,
+        created_date: u.created_date,
       })),
     });
   } catch (error) {

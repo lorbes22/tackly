@@ -3,12 +3,14 @@ import { base44 } from "@/api/base44Client";
 import { Users } from "lucide-react";
 
 const Plan = base44.entities.Plan;
+const PAGE_SIZE = 15;
 
 export default function UsersPage() {
   const [users, setUsers] = useState(null);
   const [plans, setPlans] = useState([]);
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState("");
+  const [visible, setVisible] = useState(PAGE_SIZE);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,7 +59,10 @@ export default function UsersPage() {
         </div>
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight text-ink">Users</h1>
-          <p className="text-ink-soft">Assign plans directly — useful for testing and support.</p>
+          <p className="text-ink-soft">
+            Assign plans directly — useful for testing and support.
+            {users && users.length > 0 && ` ${users.length} total.`}
+          </p>
         </div>
       </div>
 
@@ -90,7 +95,7 @@ export default function UsersPage() {
                 </td>
               </tr>
             ) : (
-              users.map((u) => (
+              users.slice(0, visible).map((u) => (
                 <tr key={u.id} className="border-b border-line last:border-0">
                   <td className="px-4 py-3 text-ink">{u.email}</td>
                   <td className="px-4 py-3 capitalize text-ink-soft">{u.role || "user"}</td>
@@ -118,6 +123,14 @@ export default function UsersPage() {
           </tbody>
         </table>
       </div>
+      {users && users.length > visible && (
+        <button
+          onClick={() => setVisible((v) => v + PAGE_SIZE)}
+          className="mt-3 h-9 w-full rounded-lg border border-line text-sm font-medium text-ink-soft hover:bg-paper-sunken hover:text-ink"
+        >
+          Load more ({users.length - visible} remaining)
+        </button>
+      )}
     </div>
   );
 }

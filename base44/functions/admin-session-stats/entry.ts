@@ -26,6 +26,9 @@ Deno.serve(async (req) => {
     // just the denominator (billed minutes) that needs status === "complete".
     let costUsd = 0;
     let billedMs = 0;
+    // sessions is already sorted -created_date, so entries land in the same
+    // newest-first order without a separate sort here.
+    const feedbackEntries: Record<string, unknown>[] = [];
 
     for (const s of sessions) {
       if (s.capture_source && byCapture[s.capture_source] != null) {
@@ -41,6 +44,16 @@ Deno.serve(async (req) => {
         ratingCount++;
         ratingBreakdown[s.rating] = (ratingBreakdown[s.rating] || 0) + 1;
       }
+      if (typeof s.rating_feedback === "string" && s.rating_feedback.trim() && feedbackEntries.length < 100) {
+        feedbackEntries.push({
+          session_id: s.id,
+          title: s.title,
+          rating: s.rating ?? null,
+          feedback: s.rating_feedback,
+          owner_email: s.owner_email,
+          created_date: s.created_date,
+        });
+      }
     }
 
     const billedMinutes = billedMs / 60000;
@@ -52,6 +65,8 @@ Deno.serve(async (req) => {
       rating_count: ratingCount,
       avg_rating: ratingCount ? Number((ratingSum / ratingCount).toFixed(2)) : null,
       rating_breakdown: ratingBreakdown,
+      feedback_count: feedbackEntries.length,
+      feedback_entries: feedbackEntries,
       total_llm_cost_usd: Number(costUsd.toFixed(4)),
       avg_cost_per_minute_usd: billedMinutes > 0 ? Number((costUsd / billedMinutes).toFixed(4)) : null,
       billed_minutes: Math.round(billedMinutes),

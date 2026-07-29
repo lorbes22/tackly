@@ -22,6 +22,7 @@ import {
   FileCode,
   FileText,
   Image,
+  Locate,
   Maximize2,
   Mic,
   PanelRightClose,
@@ -134,12 +135,21 @@ export default function Board() {
     return { minX, minY, maxX, maxY };
   }, [positions, sizes]);
 
-  const { transform, handlers: panHandlers, zoomBy, fitToContent, panToWorld } =
+  const { transform, handlers: panHandlers, zoomBy, fitToContent, panToWorld, nudgeBy } =
     usePanZoom({ viewportRef, contentBounds });
 
   // Mirror transform + drag position into refs for the drag handlers
   const transformRef = useRef(transform);
   transformRef.current = transform;
+
+  // Auto-follow: gently nudge the view so a newly-created node stays
+  // comfortably visible, without fighting wherever the person is currently
+  // looking. Default on; a toggle in the zoom controls lets them turn it off.
+  const [autoFollow, setAutoFollow] = useState(true);
+  const autoFollowRef = useRef(autoFollow);
+  autoFollowRef.current = autoFollow;
+  const pendingFollowIdRef = useRef(null);
+  const [autoPanning, setAutoPanning] = useState(false);
   const dragPosRef = useRef(null);
   dragPosRef.current = dragPos;
   const dragRef = useRef(null);
@@ -153,6 +163,45 @@ export default function Board() {
       fitToContent();
     }
   }, [nodes.length, fitToContent]);
+
+  // Auto-follow: once a newly-created node's layout position exists, nudge
+  // the pan (never the zoom level) just enough to bring it inside a
+  // comfortable inset margin of the viewport — if it's already visible in
+  // that margin, this does nothing at all, so it never re-centers on top of
+  // wherever the person happens to be looking.
+  useEffect(() => {
+    const id = pendingFollowIdRef.current;
+    if (!id) return;
+    const p = positions[id];
+    const vp = viewportRef.current;
+    if (!p || !vp) return; // wait for layout/viewport to be ready
+    pendingFollowIdRef.current = null;
+
+    const size = sizes[id] || { w: 224, h: 120 };
+    const t = transformRef.current;
+    const vw = vp.clientWidth;
+    const vh = vp.clientHeight;
+    const marginX = Math.min(160, vw * 0.15);
+    const marginY = Math.min(160, vh * 0.15);
+    const sx0 = p.x * t.scale + t.x;
+    const sy0 = p.y * t.scale + t.y;
+    const sx1 = sx0 + size.w * t.scale;
+    const sy1 = sy0 + size.h * t.scale;
+
+    let dx = 0;
+    let dy = 0;
+    if (sx0 < marginX) dx = marginX - sx0;
+    else if (sx1 > vw - marginX) dx = vw - marginX - sx1;
+    if (sy0 < marginY) dy = marginY - sy0;
+    else if (sy1 > vh - marginY) dy = vh - marginY - sy1;
+
+    if (dx || dy) {
+      setAutoPanning(true);
+      nudgeBy(dx, dy);
+      const timer = setTimeout(() => setAutoPanning(false), 450);
+      return () => clearTimeout(timer);
+    }
+  }, [positions, sizes, nudgeBy]);
 
   // ---- Ops application: the ONLY way board state changes after initial
   // load. Each op merges into existing state — never a wholesale replace
@@ -178,6 +227,11 @@ export default function Board() {
         setNodes((prev) =>
           prev.some((n) => n.id === node.id) ? prev : [...prev, node]
         );
+        // Only follow genuinely NEW live nodes, not the initial-load replay
+        // (same signal NodeCard's pop-in animation already uses).
+        if (autoFollowRef.current && initialNodeIds.current && !initialNodeIds.current.has(node.id)) {
+          pendingFollowIdRef.current = node.id;
+        }
         break;
       }
       case "attach_node": {
@@ -1075,6 +1129,7 @@ export default function Board() {
           onPointerMove={panHandlers.onPointerMove}
           onPointerUp={panHandlers.onPointerUp}
           onPointerLeave={panHandlers.onPointerLeave}
+          onPointerCancel={panHandlers.onPointerCancel}
           className="h-full touch-none cursor-grab overflow-hidden active:cursor-grabbing"
           style={{
             backgroundImage: "radial-gradient(circle, #E8E4DC 1px, transparent 1px)",
@@ -1083,7 +1138,9 @@ export default function Board() {
           }}
         >
           <div
-            className="absolute left-0 top-0 origin-top-left"
+            className={`absolute left-0 top-0 origin-top-left ${
+              autoPanning ? "transition-transform duration-[450ms] ease-out" : ""
+            }`}
             style={{
               transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
               width: CANVAS_W,
@@ -1190,6 +1247,18 @@ export default function Board() {
             >
               <Maximize2 className="h-4 w-4" />
             </button>
+            {(isMicLive || isBotLive) && (
+              <button
+                onClick={() => setAutoFollow((v) => !v)}
+                title={autoFollow ? "Auto-follow new nodes: on" : "Auto-follow new nodes: off"}
+                aria-pressed={autoFollow}
+                className={`flex h-9 w-9 items-center justify-center rounded-lg border-2 border-ink shadow-brutal-sm transition-transform hover:-translate-y-px ${
+                  autoFollow ? "bg-periwinkle text-white" : "bg-paper-raised text-ink"
+                }`}
+              >
+                <Locate className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
 
