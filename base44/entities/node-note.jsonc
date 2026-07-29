@@ -21,7 +21,7 @@
   },
   "required": ["node_id", "text"],
   "rls": {
-    "create": true,
+    "create": { "created_by": "{{user.email}}" },
     "read": {
       "$or": [
         { "created_by": "{{user.email}}" },

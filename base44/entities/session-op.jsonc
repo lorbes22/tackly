@@ -37,7 +37,7 @@
   },
   "required": ["session_id", "seq", "op_type"],
   "rls": {
-    "create": true,
+    "create": { "created_by": "{{user.email}}" },
     "read": {
       "$or": [
         { "created_by": "{{user.email}}" },
