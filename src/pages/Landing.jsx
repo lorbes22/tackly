@@ -66,28 +66,30 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-paper">
-      <header className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4">
-        <Logo />
-        <nav className="flex items-center gap-2">
-          {user ? (
-            <Link to="/app" className={NAV_CTA_CLASS}>
-              Open your threads
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          ) : (
-            <>
-              <Link
-                to="/login"
-                className="flex h-10 items-center rounded-xl px-4 text-sm font-medium text-ink-soft transition-colors hover:bg-paper-sunken hover:text-ink"
-              >
-                Log in
+      <header className="sticky top-0 z-30 border-b border-line/60 bg-paper/80 backdrop-blur-md">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4">
+          <Logo />
+          <nav className="flex items-center gap-2">
+            {user ? (
+              <Link to="/app" className={NAV_CTA_CLASS}>
+                Open your threads
+                <ArrowRight className="h-4 w-4" />
               </Link>
-              <Link to="/signup" className={NAV_CTA_CLASS}>
-                Get started
-              </Link>
-            </>
-          )}
-        </nav>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="flex h-10 items-center rounded-xl px-4 text-sm font-medium text-ink-soft transition-colors hover:bg-paper-sunken hover:text-ink"
+                >
+                  Log in
+                </Link>
+                <Link to="/signup" className={NAV_CTA_CLASS}>
+                  Get started
+                </Link>
+              </>
+            )}
+          </nav>
+        </div>
       </header>
 
       <main>
@@ -112,9 +114,11 @@ export default function Landing() {
           <HeroNodePopups />
           <div className="relative z-10 mx-auto flex max-w-2xl flex-col items-center text-center">
             <Badges />
-            <span
-              className="animate-fade-up rounded-full border-2 border-ink bg-paper-raised px-3.5 py-1 text-xs font-bold uppercase tracking-widest text-ink-soft shadow-brutal-sm"
-            >
+            <span className="animate-fade-up flex items-center gap-2 rounded-full border-2 border-ink bg-paper-raised px-3.5 py-1 text-xs font-bold uppercase tracking-widest text-ink-soft shadow-brutal-sm">
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-periwinkle opacity-60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-periwinkle" />
+              </span>
               Now mapping thought in real time
             </span>
             <h1 className="mt-5 flex flex-wrap justify-center gap-x-3 gap-y-1 font-display text-5xl font-bold leading-[1.1] tracking-tight text-ink sm:text-7xl">
@@ -128,23 +132,44 @@ export default function Landing() {
                 </span>
               ))}
               <span
-                className="inline-block animate-fade-up text-periwinkle"
+                className="relative inline-block animate-fade-up"
                 style={{ animationDelay: "420ms" }}
               >
                 thinking map.
+                {/* A hand-drawn underline carries the accent color instead of
+                    filling the text with it — reads as a highlight, not a
+                    second color competing with the rest of the headline. */}
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 200 14"
+                  preserveAspectRatio="none"
+                  className="absolute -bottom-1 left-0 h-[0.22em] w-full text-periwinkle sm:-bottom-2"
+                >
+                  <path
+                    d="M2,9 Q40,2 75,7 T150,6 T198,9"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="7"
+                    strokeLinecap="round"
+                  />
+                </svg>
               </span>
             </h1>
             <p
-              className="mt-6 max-w-lg animate-fade-up text-lg leading-relaxed text-ink-soft"
+              className="mt-7 max-w-lg animate-fade-up text-lg leading-relaxed text-ink-soft"
               style={{ animationDelay: "580ms" }}
             >
               Tackly listens whilst you speak — and builds your thinking in real time.
             </p>
-            <div className="mt-8 animate-fade-up" style={{ animationDelay: "700ms" }}>
+            <div
+              className="mt-8 flex animate-fade-up flex-col items-center gap-2.5"
+              style={{ animationDelay: "700ms" }}
+            >
               <Link to={user ? "/app" : "/signup"} className={PRIMARY_CTA_CLASS}>
                 Try it for free
                 <ArrowRight className="h-4 w-4" />
               </Link>
+              <p className="text-xs font-medium text-ink-faint">No credit card. Free to start.</p>
             </div>
           </div>
         </section>

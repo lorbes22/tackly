@@ -138,6 +138,20 @@ export default {
           '0%': { backgroundPosition: '150% 0' },
           '100%': { backgroundPosition: '-50% 0' },
         },
+        // Landing hero method-cards: a one-time "deal off the stack" entry,
+        // not scroll-linked — every card starts near the same spot (set per
+        // card via --stack-x/--stack-y/--stack-rotate custom properties) and
+        // settles into its natural position. Plays on every mount, so it
+        // replays on every fresh page load, same as fade-up.
+        'stack-in': {
+          '0%': {
+            opacity: '0',
+            transform:
+              'translate(var(--stack-x, 0), var(--stack-y, 0)) rotate(var(--stack-rotate, 0deg)) scale(0.96)',
+          },
+          '55%': { opacity: '1' },
+          '100%': { opacity: '1', transform: 'translate(0, 0) rotate(0deg) scale(1)' },
+        },
       },
       animation: {
         'pop-in': 'pop-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both',
@@ -148,6 +162,7 @@ export default {
         'eq-bar': 'eq-bar 900ms ease-in-out infinite',
         forming: 'forming 1.4s ease-in-out infinite',
         shimmer: 'shimmer 1.8s linear infinite',
+        'stack-in': 'stack-in 650ms cubic-bezier(0.22, 1, 0.36, 1) both',
       },
     },
   },

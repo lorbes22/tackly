@@ -1,4 +1,4 @@
-import { ArrowDown, Mic, Sparkles } from "lucide-react";
+import { ArrowDown, Check, Link2, Mic, Share2, Sparkles, Users } from "lucide-react";
 import { NodeCard } from "@/components/NodeCard";
 
 // Reused for card 1's decorative "listening" visual — same equalizer-bar
@@ -17,6 +17,35 @@ function MicPulse() {
           />
         ))}
       </span>
+    </div>
+  );
+}
+
+// Reused for card 4's decorative "share" visual — a compact echo of the
+// real ShareBoardPreview/ShareDropdown UI (share link + a collaborator
+// row), not the full component, so it reads as an example rather than a
+// second copy of the "Ready to share" section above.
+function ShareGlimpse() {
+  return (
+    <div className="flex h-full items-center justify-center py-6" aria-hidden="true">
+      <div className="w-full max-w-[260px] rounded-xl border-2 border-ink bg-paper-raised p-4 shadow-brutal-sm">
+        <div className="flex items-center gap-1.5 text-xs font-bold text-ink">
+          <Link2 className="h-3.5 w-3.5" />
+          Share link
+        </div>
+        <div className="mt-2 flex items-center gap-1.5">
+          <span className="h-8 flex-1 truncate rounded-lg border border-line bg-paper px-2 text-xs leading-8 text-ink-soft">
+            tackly.co/shared/8f2a91c3e6
+          </span>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-ink bg-paper text-ink">
+            <Check className="h-3.5 w-3.5" />
+          </span>
+        </div>
+        <div className="mt-3 flex items-center gap-2 border-t border-line pt-3">
+          <Users className="h-3.5 w-3.5 text-ink-faint" />
+          <span className="text-xs text-ink-soft">priya@acme.com</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -66,6 +95,13 @@ const CARDS = [
       </div>
     ),
   },
+  {
+    bg: "bg-note-lavender",
+    icon: Share2,
+    title: "Share it instantly.",
+    body: "One click turns a finished thread into a read-only link anyone can open — or invite up to three collaborators to map it together, live.",
+    preview: <ShareGlimpse />,
+  },
 ];
 
 // Same sticky-stack technique as the AI Assistant / Ready-to-share pair —
@@ -75,7 +111,7 @@ const CARDS = [
 // fans out just below the previous one instead of just replacing it.
 export function HowItWorks() {
   return (
-    <section id="how-it-works" className="mx-auto w-full max-w-6xl px-4 pb-16 sm:pb-24 sm:scroll-mt-8">
+    <section id="how-it-works" className="mx-auto w-full max-w-6xl px-4 pb-16 pt-16 sm:pb-24 sm:pt-24 sm:scroll-mt-8">
       <div className="mx-auto max-w-xl text-center">
         <p className="text-xs font-bold uppercase tracking-widest text-periwinkle-deep">How it works</p>
         <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-ink sm:text-4xl">
