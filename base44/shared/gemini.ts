@@ -33,17 +33,42 @@ function forcedToolConfig(tool: GeminiTool) {
   return { functionCallingConfig: { mode: "ANY", allowedFunctionNames: [tool.name] } };
 }
 
-// Plain, uncached call — used for the admin "Save & Test" connectivity check
-// (no need to spin up a cache just to confirm a key/model works) and as the
-// fallback when caching isn't available for a given model/prompt.
-export async function classifyWithGemini(opts: {
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// This is the LAST-RESORT call — once caching has been ruled out (or isn't
+// applicable), there's nothing else to fall back to, so it gets a generous
+// timeout (real classification calls legitimately take several seconds) but
+// still a hard ceiling so a genuinely stuck request can't hang the whole
+// function invocation forever.
+const CLASSIFY_FETCH_TIMEOUT_MS = 15000;
+// One retry after a short backoff. Found live on 2026-07-30: with no retry
+// at all, a single transient Gemini error on THIS call (a timeout, a 5xx, a
+// network blip — anything) took down the entire classification for that
+// utterance batch. process-session's outer catch releases claimed utterances
+// back to unprocessed and returns a 500 on any thrown error, and nothing
+// else automatically re-queues a stray unprocessed utterance mid-session —
+// so a single transient blip here meant that content stayed stuck/missing
+// off the board indefinitely, not just briefly slow. A same-request retry
+// turns most of these blips into one extra second of latency instead of
+// lost content and a visible failure.
+const CLASSIFY_RETRY_BACKOFF_MS = 600;
+
+async function classifyWithGeminiOnce(opts: {
   apiKey: string;
   model: string;
   system: string;
   user: string;
   tool: GeminiTool;
 }): Promise<{ data: any; usage: GeminiUsage }> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(opts.model)}:generateContent`,
     {
       method: "POST",
@@ -55,6 +80,7 @@ export async function classifyWithGemini(opts: {
         toolConfig: forcedToolConfig(opts.tool),
       }),
     },
+    CLASSIFY_FETCH_TIMEOUT_MS,
   );
   if (!res.ok) {
     throw new Error(`Gemini API error ${res.status}: ${(await res.text()).slice(0, 500)}`);
@@ -63,6 +89,26 @@ export async function classifyWithGemini(opts: {
   const part = body.candidates?.[0]?.content?.parts?.find((p: any) => p.functionCall);
   const data = part?.functionCall?.args ?? null;
   return { data, usage: (body.usageMetadata ?? {}) as GeminiUsage };
+}
+
+// Plain, uncached call — used for the admin "Save & Test" connectivity check
+// (no need to spin up a cache just to confirm a key/model works) and as the
+// fallback when caching isn't available for a given model/prompt. See
+// classifyWithGeminiOnce above for why this retries once on any failure.
+export async function classifyWithGemini(opts: {
+  apiKey: string;
+  model: string;
+  system: string;
+  user: string;
+  tool: GeminiTool;
+}): Promise<{ data: any; usage: GeminiUsage }> {
+  try {
+    return await classifyWithGeminiOnce(opts);
+  } catch (err) {
+    console.warn(`Gemini classify call failed, retrying once: ${(err as Error).message}`);
+    await new Promise((r) => setTimeout(r, CLASSIFY_RETRY_BACKOFF_MS));
+    return await classifyWithGeminiOnce(opts);
+  }
 }
 
 // Google's cache-specific endpoints (create + cached generateContent) have
@@ -81,16 +127,6 @@ export async function classifyWithGemini(opts: {
 // a bad stretch, with no corresponding chance of success.
 const CACHE_FETCH_TIMEOUT_MS = 2000;
 
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CACHE_FETCH_TIMEOUT_MS);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 export type GeminiCacheRef = { name: string; expiresAt: string };
 
 // How long a created cache stays alive before it needs recreating. Chosen to
@@ -107,20 +143,24 @@ async function createGeminiCache(opts: {
   system: string;
   tool: GeminiTool;
 }): Promise<GeminiCacheRef> {
-  const res = await fetchWithTimeout("https://generativelanguage.googleapis.com/v1beta/cachedContents", {
-    method: "POST",
-    headers: { "x-goog-api-key": opts.apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: `models/${opts.model}`,
-      systemInstruction: { parts: [{ text: opts.system }] },
-      tools: functionDeclarations(opts.tool),
-      // toolConfig belongs on the CACHE, not the per-call generateContent
-      // request — see classifyWithGeminiCached's cached-call branch below
-      // for why this matters (a real bug found live, not a style choice).
-      toolConfig: forcedToolConfig(opts.tool),
-      ttl: `${CACHE_TTL_SECONDS}s`,
-    }),
-  });
+  const res = await fetchWithTimeout(
+    "https://generativelanguage.googleapis.com/v1beta/cachedContents",
+    {
+      method: "POST",
+      headers: { "x-goog-api-key": opts.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: `models/${opts.model}`,
+        systemInstruction: { parts: [{ text: opts.system }] },
+        tools: functionDeclarations(opts.tool),
+        // toolConfig belongs on the CACHE, not the per-call generateContent
+        // request — see classifyWithGeminiCached's cached-call branch below
+        // for why this matters (a real bug found live, not a style choice).
+        toolConfig: forcedToolConfig(opts.tool),
+        ttl: `${CACHE_TTL_SECONDS}s`,
+      }),
+    },
+    CACHE_FETCH_TIMEOUT_MS,
+  );
   if (!res.ok) {
     throw new Error(`Gemini cache create error ${res.status}: ${(await res.text()).slice(0, 500)}`);
   }
@@ -193,6 +233,7 @@ export async function classifyWithGeminiCached(opts: {
             cachedContent: cache.name,
           }),
         },
+        CACHE_FETCH_TIMEOUT_MS,
       );
       if (!res.ok) {
         throw new Error(`Gemini cached call error ${res.status}: ${(await res.text()).slice(0, 500)}`);
