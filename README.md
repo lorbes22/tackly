@@ -115,7 +115,7 @@ Connectors update live as nodes are attached, expanded, moved, or consolidated, 
 The frontend subscribes to `SessionOp` realtime changes rather than re-fetching the entire board, applying granular ops (`create_node`, `attach_node`, `create_edge`, `update_status`) directly to in-memory canvas state.
 
 ### Flexible Model Providers
-Tier 1, Tier 2, and TacklyAI can run directly on Anthropic (Claude Haiku 4.5) or Google Gemini 3.5 Flash Light via configurable Deno secrets and runtime settings in Admin.
+Tier 1, Tier 2, and TacklyAI can run directly on Anthropic (Claude Haiku 4.5) or Google Gemini 3.5 Flash Light via configurable Deno secrets and runtime settings in Admin. Gemini's path uses explicit prompt caching (`cachedContents`) with a timeout-bounded fetch and a fails-soft-to-uncached design — see `PLAN.md` §17 and `FINDINGS.md` §17 for the exact request shape Google's cache API requires (a real, previously-silent bug lived here) and why `classify-partial` deliberately opts out of caching.
 
 ### Billing & Quota Management
 Subscription limits are tracked via session duration (`billed_ms`) using direct Stripe Checkout integration and webhook lifecycle management.
