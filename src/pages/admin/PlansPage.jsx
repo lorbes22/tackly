@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
-import { CreditCard, Plus, X } from "lucide-react";
+import { Check, CreditCard, Pencil, Plus, X } from "lucide-react";
 
 const Plan = base44.entities.Plan;
 
@@ -9,12 +9,18 @@ const Plan = base44.entities.Plan;
 // needed. Two things are editable: the Stripe Price id (paired by hand
 // after creating the matching recurring Price in the Stripe dashboard,
 // explicit Save since it's easy to mistype), and the marketing "perks"
-// list shown on the plan cards (each add/remove saves immediately — it's
-// just reordering/editing short strings, nothing worth a draft state for).
+// list shown on the plan cards (add/remove/edit each save immediately —
+// short strings, nothing worth a page-level draft state for).
 function FeatureEditor({ plan, onChange }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Which perk (by index) is mid-edit, and its in-progress text — separate
+  // from `draft` (the "add a new perk" field) since both can't be active
+  // for the same row at once anyway, but keeping them distinct avoids the
+  // add-field accidentally inheriting an edit-in-progress value.
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [editValue, setEditValue] = useState("");
 
   const persist = async (features) => {
     setBusy(true);
@@ -41,26 +47,101 @@ function FeatureEditor({ plan, onChange }) {
     persist((plan.features || []).filter((_, i) => i !== index));
   };
 
+  const startEdit = (index) => {
+    if (busy) return;
+    setEditingIndex(index);
+    setEditValue(plan.features[index]);
+  };
+
+  const cancelEdit = () => {
+    setEditingIndex(null);
+    setEditValue("");
+  };
+
+  const saveEdit = () => {
+    const text = editValue.trim();
+    if (!text || busy) return;
+    const next = [...plan.features];
+    next[editingIndex] = text;
+    setEditingIndex(null);
+    setEditValue("");
+    persist(next);
+  };
+
   return (
     <div className="mt-4">
       <span className="mb-1.5 block text-xs font-medium text-ink-soft">Perks shown on this plan's card</span>
       <ul className="space-y-1.5">
-        {(plan.features || []).map((f, i) => (
-          <li
-            key={`${f}-${i}`}
-            className="flex items-center justify-between gap-2 rounded-lg border border-line bg-paper px-3 py-1.5 text-sm text-ink"
-          >
-            {f}
-            <button
-              onClick={() => remove(i)}
-              disabled={busy}
-              title="Remove perk"
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-ink-faint hover:bg-note-coral hover:text-ink disabled:opacity-50"
+        {(plan.features || []).map((f, i) =>
+          editingIndex === i ? (
+            <li key={`${f}-${i}`} className="flex items-center gap-2">
+              <input
+                type="text"
+                autoFocus
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    saveEdit();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelEdit();
+                  }
+                }}
+                className="h-8 flex-1 rounded-lg border border-periwinkle bg-paper-raised px-3 text-sm focus:outline-none"
+              />
+              <button
+                onClick={saveEdit}
+                disabled={busy || !editValue.trim()}
+                title="Save"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ink-faint hover:bg-note-mint hover:text-ink disabled:opacity-50"
+              >
+                <Check className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={cancelEdit}
+                disabled={busy}
+                title="Cancel"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ink-faint hover:bg-paper-sunken hover:text-ink disabled:opacity-50"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          ) : (
+            <li
+              key={`${f}-${i}`}
+              className="group flex items-center justify-between gap-2 rounded-lg border border-line bg-paper px-3 py-1.5 text-sm text-ink"
             >
-              <X className="h-3 w-3" />
-            </button>
-          </li>
-        ))}
+              <button
+                onClick={() => startEdit(i)}
+                disabled={busy}
+                title="Click to edit"
+                className="flex-1 truncate text-left disabled:opacity-50"
+              >
+                {f}
+              </button>
+              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                <button
+                  onClick={() => startEdit(i)}
+                  disabled={busy}
+                  title="Edit perk"
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-ink-faint hover:bg-paper-sunken hover:text-ink disabled:opacity-50"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+                <button
+                  onClick={() => remove(i)}
+                  disabled={busy}
+                  title="Remove perk"
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-ink-faint hover:bg-note-coral hover:text-ink disabled:opacity-50"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            </li>
+          )
+        )}
         {(plan.features || []).length === 0 && (
           <li className="text-sm text-ink-faint">No perks listed yet.</li>
         )}
