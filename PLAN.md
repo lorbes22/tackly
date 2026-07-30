@@ -470,6 +470,8 @@ All six phases are complete — see §2. Post-launch work (§4, and FINDINGS.md)
 
 ## 17. Configurable Per-Tier LLM Provider
 
+> **✅ Current config is the confirmed-stable baseline (2026-07-30)** — Gemini plain/uncached, caching off by default, T1 ≈ 2-3s, T2 ≈ 1-2s. Don't re-enable `allowGeminiCache` without re-verifying Google's cache-serving endpoint is actually fast first. Full detail: [FINDINGS.md §18](FINDINGS.md#18-correction-to-17--the-slowness-was-never-gemini-it-was-the-cache-serving-endpoint-caching-disabled-by-default-2026-07-30).
+
 Tier 1 (`process-session`), Tier 2 (`consolidate-session`), and TacklyAI chat (`ask-tackly-ai`) can each be pointed at a different provider/model from **Admin > Config > "LLM models"**, without a code deploy. Full activation history and a real production incident are in [FINDINGS.md §4](FINDINGS.md#4-configurable-per-tier-llm-provider--activation-log-2026-07-24).
 
 - `LlmConfig` entity (admin-only RLS): one row per tier (`t1`/`t2`/`chat`) holding `provider` (`anthropic` | `google`), `model` (exact API model-id string), and `secret_env_var` (the *name* of a Deno secret, never the key value — set via `npx base44 secrets set` from the terminal, outside this app entirely).
