@@ -22,6 +22,7 @@
 16. [Livestream removed, public share link shipped, staggered board reveal (2026-07-29)](#16-livestream-removed-public-share-link-shipped-staggered-board-reveal-2026-07-29)
 17. [Gemini T1 caching was silently broken since activation — the real "T1 feels slower" cause (2026-07-30)](#17-gemini-t1-caching-was-silently-broken-since-activation--the-real-t1-feels-slower-cause-2026-07-30)
 18. [Correction to §17 — the slowness was never Gemini, it was the cache-serving endpoint; caching disabled by default (2026-07-30)](#18-correction-to-17--the-slowness-was-never-gemini-it-was-the-cache-serving-endpoint-caching-disabled-by-default-2026-07-30)
+19. [RLS security fix, round 2 — deployed read access had drifted public again (2026-07-30)](#19-rls-security-fix-round-2--deployed-read-access-had-drifted-public-again-2026-07-30)
 
 ---
 
@@ -499,3 +500,19 @@ Same day, a few hours after Finding 17 shipped and the user re-tested and confir
 - Typical live latency at this baseline, measured directly: **T1 ≈ 2-3s per utterance, T2 ≈ 1-2s**, both reliable (0 failures across clean repeated testing).
 
 **Do not re-enable Gemini caching (`allowGeminiCache: true`) without first re-verifying Google's cache-serving endpoint is actually fast again** — re-enabling it blind would silently reintroduce the exact regression this and Finding 17 fixed. If a future session wants to chase T1/T2 latency further below this baseline, treat this configuration as the floor to beat, not a problem to route around.
+
+---
+
+## 19. RLS security fix, round 2 — deployed read access had drifted public again (2026-07-30)
+
+User ran Base44's own security scanner again and got 11 fresh "Critical" findings, this time all "Public users can access all X records" (read, not create): `CalendarConnection`, `Collaborator`, `Node`, `NodeEdge`, `NodeNote`, `NodeUtteranceLink`, `Session`, `SessionOp`, `SupportTicket`, `UsageEvent`, `Utterance`.
+
+**Checked the local entity files first, before touching anything.** Every one of `base44/entities/*.jsonc` already had correct owner-scoped `read` RLS — `{"created_by": "{{user.email}}"}` or the `$or:[created_by, data.owner_email]` pattern used everywhere collaborators/service-role writers are involved (`SupportTicket`/`UsageEvent` correctly admin-only). This is the same pattern Finding 13 put in place and Finding 15 re-confirmed live. So the local source of truth was never wrong — the **deployed** app's schema had drifted away from it a second time, silently, with no corresponding change to the checked-in files (nothing to diff, nothing to commit).
+
+**Fix was a plain `npx base44 entities push --yes`** — re-synced all 18 local entity definitions (schema + RLS) to the live app. Reported `Updated:` for all 18, none created/deleted, confirming this was purely a stale-deployment problem, not a schema mismatch.
+
+**Verified live** with anonymous `curl` (no auth header) against each flagged entity's REST endpoint (`https://app.base44.com/api/apps/<app_id>/entities/<Entity>`): all 11 now return `200 []` instead of the full table. Spot-checked before/after isn't possible after the fact (the push already ran by the time this was scripted), but the empty-array result on every single flagged entity, immediately after a push that only just landed, is direct confirmation RLS is now being enforced against a real unauthenticated request rather than just "the local file looks right."
+
+**Root cause of the drift itself is not fully pinned down** — no commit or deploy in this session's own history explains it (the last `entities push` on record was Finding 15's post-rollback fix on 2026-07-29, and nothing since has touched `base44/entities/`). Two candidates, neither confirmed: (1) another rollback/redeploy from an older branch, similar to Finding 15's `good-version` incident, that reset live entity config without a corresponding local change; (2) a Base44 platform-side edit (dashboard RLS tweak, or a scan "fix suggestion" applied and then reverted) outside the CLI's own history. Flagging this pattern rather than closing it: **this is now the second time deployed RLS has silently diverged from the correct, checked-in entity definitions with no trace in git.** Given that, `entities push` should be treated as cheap, safe (schema/RLS only, never touches data — confirmed in `entities-push.md`), and worth re-running any time a security scan is re-checked or after any rollback/redeploy, rather than assumed to have "already been done" because the local files look right.
+
+**No functional impact expected or observed**: every legitimate read in this app already goes through an authenticated call (frontend behind `RequireAuth`) or a service-role backend function that resolves access explicitly (`get-board-access`, `get-shared-board`) — nothing in the real product relies on anonymous entity reads. This closes a door real users never used.
