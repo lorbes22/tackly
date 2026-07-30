@@ -1,15 +1,17 @@
-import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { Logo } from "@/components/Logo";
 import { useAuth } from "@/lib/AuthContext";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { HeroNodePopups } from "@/components/landing/HeroNodePopups";
+import { HeroMethodCards } from "@/components/landing/HeroMethodCards";
 import { Badges } from "@/components/landing/Badges";
 import { ScrollRevealText } from "@/components/landing/ScrollRevealText";
 import { TacklyAIPreview } from "@/components/landing/TacklyAIPreview";
 import { ShareBoardPreview } from "@/components/landing/ShareBoardPreview";
+import { HowItWorks } from "@/components/landing/HowItWorks";
 import { Faq } from "@/components/landing/Faq";
 import { SiteFooter } from "@/components/landing/SiteFooter";
-import { PlatformIconRow } from "@/components/PlatformIcons";
 import { PlanCards } from "@/components/PlanCards";
 import { ArrowRight, FileUp, Mic, Share2, Sparkles, Users } from "lucide-react";
 
@@ -43,6 +45,18 @@ const PRIMARY_CTA_CLASS =
 
 export default function Landing() {
   const { user } = useAuth();
+  const { hash } = useLocation();
+
+  // React Router's <Link> to a same-page hash (the footer's "How it works")
+  // just updates the URL without scrolling — only a genuine full navigation
+  // gets the browser's native hash-scroll behavior for free. One-time
+  // scrollIntoView per hash change, not a scroll listener, so this can't
+  // reintroduce the class of bug FINDINGS.md warns about.
+  useEffect(() => {
+    if (!hash) return;
+    const el = document.querySelector(hash);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [hash]);
 
   useDocumentMeta({
     title: "Tackly — the AI notetaker that maps your thinking, not just your transcript",
@@ -135,25 +149,7 @@ export default function Landing() {
           </div>
         </section>
 
-        <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:pb-24">
-          <div className="grid gap-5 sm:grid-cols-3">
-            {HOW_IT_WORKS.map(({ icon: Icon, title, body, platforms }) => (
-              <div
-                key={title}
-                className="rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm transition-transform hover:-translate-y-1"
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-periwinkle-tint">
-                  <Icon className="h-5 w-5 text-periwinkle-deep" />
-                </div>
-                <div className="mt-4 flex items-center gap-2">
-                  <p className="font-display text-lg font-bold text-ink">{title}</p>
-                  {platforms && <PlatformIconRow />}
-                </div>
-                <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">{body}</p>
-              </div>
-            ))}
-          </div>
-        </section>
+        <HeroMethodCards items={HOW_IT_WORKS} />
 
         <ScrollRevealText text={ABOUT_TEXT} />
 
@@ -161,51 +157,64 @@ export default function Landing() {
             rhythm between the plain-paper marketing sections above and
             below, and a cue that these two cards are "see it in action"
             rather than "read about it". */}
-        <section className="border-y-2 border-ink/10 bg-paper-sunken py-16 sm:py-24">
-          <div className="mx-auto w-full max-w-6xl space-y-8 px-4">
-            <div className="grid items-center gap-8 rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm sm:grid-cols-2 sm:p-8">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-periwinkle-tint">
-                    <Sparkles className="h-5 w-5 text-periwinkle-deep" />
+        <section className="border-y-2 border-ink/10 bg-paper-sunken py-16 sm:pb-40 sm:pt-24">
+          <div className="relative mx-auto w-full max-w-6xl px-4">
+            {/* Sticky-stack: each card pins a little lower than the one
+                before it (pure CSS position:sticky, no scroll listener), so
+                scrolling past fans them out like a small deck instead of
+                just swapping one card for the next. */}
+            <div
+              className="sticky top-16 z-10 rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm sm:p-8"
+              style={{ marginBottom: "1.5rem" }}
+            >
+              <div className="grid items-center gap-8 sm:grid-cols-2">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-periwinkle-tint">
+                      <Sparkles className="h-5 w-5 text-periwinkle-deep" />
+                    </div>
+                    <p className="font-display text-xl font-bold text-ink">AI Assistant</p>
+                    <span className="rounded-full border-2 border-ink bg-note-mint px-2.5 py-0.5 text-xs font-bold text-ink">
+                      On every plan
+                    </span>
                   </div>
-                  <p className="font-display text-xl font-bold text-ink">AI Assistant</p>
-                  <span className="rounded-full border-2 border-ink bg-note-mint px-2.5 py-0.5 text-xs font-bold text-ink">
-                    On every plan
-                  </span>
+                  <p className="mt-4 text-sm leading-relaxed text-ink-soft">
+                    Ask questions right on the board — "what was the main action?", "what risks came up?" — and get
+                    answers grounded only in that thread's own nodes and transcript. No digging back through the map
+                    yourself, and nothing about the chat is stored — ask, get your answer, move on.
+                  </p>
                 </div>
-                <p className="mt-4 text-sm leading-relaxed text-ink-soft">
-                  Ask questions right on the board — "what was the main action?", "what risks came up?" — and get
-                  answers grounded only in that thread's own nodes and transcript. No digging back through the map
-                  yourself, and nothing about the chat is stored — ask, get your answer, move on.
-                </p>
-              </div>
 
-              <TacklyAIPreview />
+                <TacklyAIPreview />
+              </div>
             </div>
 
-            <div className="grid items-center gap-8 rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm sm:grid-cols-2 sm:p-8">
-              <div className="sm:order-last">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-periwinkle-tint">
-                    <Share2 className="h-5 w-5 text-periwinkle-deep" />
+            <div className="sticky top-32 z-20 rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm sm:p-8">
+              <div className="grid items-center gap-8 sm:grid-cols-2">
+                <div className="sm:order-last">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-periwinkle-tint">
+                      <Share2 className="h-5 w-5 text-periwinkle-deep" />
+                    </div>
+                    <p className="font-display text-xl font-bold text-ink">Ready to share</p>
+                    <span className="rounded-full border-2 border-ink bg-note-sky px-2.5 py-0.5 text-xs font-bold text-ink">
+                      No account needed
+                    </span>
                   </div>
-                  <p className="font-display text-xl font-bold text-ink">Ready to share</p>
-                  <span className="rounded-full border-2 border-ink bg-note-sky px-2.5 py-0.5 text-xs font-bold text-ink">
-                    No account needed
-                  </span>
+                  <p className="mt-4 text-sm leading-relaxed text-ink-soft">
+                    Everything tackled, ready to share. One click turns a finished thread into a clean, read-only
+                    board anyone can open — the map, not the meeting. Or invite up to three collaborators for full
+                    access while you're still mapping it together.
+                  </p>
                 </div>
-                <p className="mt-4 text-sm leading-relaxed text-ink-soft">
-                  Everything tackled, ready to share. One click turns a finished thread into a clean, read-only
-                  board anyone can open — the map, not the meeting. Or invite up to three collaborators for full
-                  access while you're still mapping it together.
-                </p>
-              </div>
 
-              <ShareBoardPreview />
+                <ShareBoardPreview />
+              </div>
             </div>
           </div>
         </section>
+
+        <HowItWorks />
 
         <section className="mx-auto w-full max-w-6xl px-4 py-16 sm:py-24">
           <div className="mx-auto max-w-xl text-center">
