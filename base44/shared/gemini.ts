@@ -65,6 +65,27 @@ export async function classifyWithGemini(opts: {
   return { data, usage: (body.usageMetadata ?? {}) as GeminiUsage };
 }
 
+// Google's cache-specific endpoints (create + cached generateContent) have
+// been observed hanging/timing out (524) well past what T1's "under 1s"
+// target can tolerate, with no timeout of their own to bound the damage — a
+// slow cache endpoint could stall an entire classification instead of just
+// falling back to the plain (proven-reliable, pre-caching-era) uncached
+// call. Caching is explicitly a cost optimization, never something that
+// should be allowed to make T1 SLOWER than not caching at all, so both
+// cache-specific fetches below are bounded and fail fast into the existing
+// fallback path on a timeout.
+const CACHE_FETCH_TIMEOUT_MS = 6000;
+
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CACHE_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export type GeminiCacheRef = { name: string; expiresAt: string };
 
 // How long a created cache stays alive before it needs recreating. Chosen to
@@ -81,13 +102,17 @@ async function createGeminiCache(opts: {
   system: string;
   tool: GeminiTool;
 }): Promise<GeminiCacheRef> {
-  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/cachedContents", {
+  const res = await fetchWithTimeout("https://generativelanguage.googleapis.com/v1beta/cachedContents", {
     method: "POST",
     headers: { "x-goog-api-key": opts.apiKey, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: `models/${opts.model}`,
       systemInstruction: { parts: [{ text: opts.system }] },
       tools: functionDeclarations(opts.tool),
+      // toolConfig belongs on the CACHE, not the per-call generateContent
+      // request — see classifyWithGeminiCached's cached-call branch below
+      // for why this matters (a real bug found live, not a style choice).
+      toolConfig: forcedToolConfig(opts.tool),
       ttl: `${CACHE_TTL_SECONDS}s`,
     }),
   });
@@ -145,15 +170,22 @@ export async function classifyWithGeminiCached(opts: {
 
   if (cache) {
     try {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(opts.model)}:generateContent`,
         {
           method: "POST",
           headers: { "x-goog-api-key": opts.apiKey, "Content-Type": "application/json" },
+          // Gemini rejects a cachedContent request that also sets
+          // system_instruction, tools, or toolConfig — all three are
+          // immutable properties of the CachedContent itself (already set
+          // in createGeminiCache above), not the per-call request. Setting
+          // toolConfig here too was a genuine bug: every single cached call
+          // 400'd and silently fell back to the slow uncached path (full
+          // system prompt reprocessed from scratch on every classification),
+          // which is why caching never actually sped anything up.
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: opts.user }] }],
             cachedContent: cache.name,
-            toolConfig: forcedToolConfig(opts.tool),
           }),
         },
       );

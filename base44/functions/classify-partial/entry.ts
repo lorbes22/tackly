@@ -56,6 +56,11 @@ Deno.serve(async (req) => {
       user: `Partial (unfinished) utterance: "${text}"`,
       tool: TOOL,
       maxTokens: 256,
+      // This system prompt is a fixed ~300 tokens — permanently below
+      // Google's 1024-token minimum for explicit caching. Attempting it
+      // anyway just wastes a round-trip AND poisons process-session's
+      // shared t1 cache cooldown every time this fires (see llm.ts).
+      allowGeminiCache: false,
     });
     if (costUsd > 0) {
       // Awaited, not fire-and-forget — see consolidate-session's comment on

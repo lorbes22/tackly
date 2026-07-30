@@ -8,7 +8,7 @@
 // existed, only optionally different once an admin has verified a swap.
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { classifyWithTool, estimateCostUsd as estimateAnthropicCostUsd, makeAnthropic } from "./claude.ts";
-import { classifyWithGeminiCached, estimateGeminiCostUsd } from "./gemini.ts";
+import { classifyWithGemini, classifyWithGeminiCached, estimateGeminiCostUsd } from "./gemini.ts";
 
 export type ClassifyTool = {
   name: string;
@@ -33,6 +33,16 @@ export async function classifyForTier(opts: {
   user: string;
   tool: ClassifyTool;
   maxTokens?: number;
+  // classify-partial shares tier "t1" with process-session (same admin
+  // control knob) but its system prompt is a fixed ~300 tokens — permanently
+  // below Google's 1024-token minimum for explicit caching, not a transient
+  // failure. Letting it attempt caching anyway meant every single partial
+  // guess (fired constantly during live mic capture) failed cache creation
+  // and reset the SHARED t1 cooldown, which starved process-session's much
+  // larger, genuinely cacheable prompt of ever getting a stable cache — a
+  // real bug found live (2026-07-30). Pass false here to skip Gemini caching
+  // entirely for a call site whose prompt can never qualify.
+  allowGeminiCache?: boolean;
 }): Promise<ClassifyOutcome> {
   const rows = await opts.base44.asServiceRole.entities.LlmConfig.filter(
     { tier: opts.tier },
@@ -63,6 +73,17 @@ export async function classifyForTier(opts: {
     throw new Error(
       `LlmConfig for tier "${opts.tier}" points at secret "${cfg.secret_env_var}", which isn't set — run npx base44 secrets set ${cfg.secret_env_var}=your-key`,
     );
+  }
+
+  if (cfg.provider === "google" && opts.allowGeminiCache === false) {
+    const { data, usage } = await classifyWithGemini({
+      apiKey,
+      model: cfg.model,
+      system: opts.system,
+      user: opts.user,
+      tool: opts.tool,
+    });
+    return { data, costUsd: estimateGeminiCostUsd(cfg.model, usage), provider: "google", model: cfg.model };
   }
 
   if (cfg.provider === "google") {
