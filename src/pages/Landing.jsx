@@ -6,11 +6,12 @@ import { HeroNodePopups } from "@/components/landing/HeroNodePopups";
 import { Badges } from "@/components/landing/Badges";
 import { ScrollRevealText } from "@/components/landing/ScrollRevealText";
 import { TacklyAIPreview } from "@/components/landing/TacklyAIPreview";
+import { ShareBoardPreview } from "@/components/landing/ShareBoardPreview";
 import { Faq } from "@/components/landing/Faq";
 import { SiteFooter } from "@/components/landing/SiteFooter";
 import { PlatformIconRow } from "@/components/PlatformIcons";
 import { PlanCards } from "@/components/PlanCards";
-import { ArrowRight, FileUp, Mic, Sparkles, Users } from "lucide-react";
+import { ArrowRight, FileUp, Mic, Share2, Sparkles, Users } from "lucide-react";
 
 const HOW_IT_WORKS = [
   {
@@ -77,6 +78,19 @@ export default function Landing() {
 
       <main>
         <section className="relative mx-auto w-full max-w-5xl overflow-hidden px-4 py-16 sm:py-24">
+          {/* The board canvas's own dot-grid, faded in behind the hero — a
+              quiet nod that this marketing page sits on the same "paper" as
+              the real product. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            style={{
+              backgroundImage: "radial-gradient(circle, #E8E4DC 1.5px, transparent 1.5px)",
+              backgroundSize: "28px 28px",
+              maskImage: "radial-gradient(ellipse 60% 55% at 50% 30%, black 0%, transparent 75%)",
+              WebkitMaskImage: "radial-gradient(ellipse 60% 55% at 50% 30%, black 0%, transparent 75%)",
+            }}
+          />
           <div
             aria-hidden="true"
             className="pointer-events-none absolute left-1/2 top-0 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-periwinkle-tint opacity-70 blur-3xl"
@@ -143,32 +157,62 @@ export default function Landing() {
 
         <ScrollRevealText text={ABOUT_TEXT} />
 
-        <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:pb-24">
-          <div className="grid items-center gap-8 rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm sm:grid-cols-2 sm:p-8">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-periwinkle-tint">
-                  <Sparkles className="h-5 w-5 text-periwinkle-deep" />
+        {/* Both product deep-dives share one tinted band — a beat of visual
+            rhythm between the plain-paper marketing sections above and
+            below, and a cue that these two cards are "see it in action"
+            rather than "read about it". */}
+        <section className="border-y-2 border-ink/10 bg-paper-sunken py-16 sm:py-24">
+          <div className="mx-auto w-full max-w-6xl space-y-8 px-4">
+            <div className="grid items-center gap-8 rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm sm:grid-cols-2 sm:p-8">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-periwinkle-tint">
+                    <Sparkles className="h-5 w-5 text-periwinkle-deep" />
+                  </div>
+                  <p className="font-display text-xl font-bold text-ink">AI Assistant</p>
+                  <span className="rounded-full border-2 border-ink bg-note-mint px-2.5 py-0.5 text-xs font-bold text-ink">
+                    On every plan
+                  </span>
                 </div>
-                <p className="font-display text-xl font-bold text-ink">AI Assistant</p>
-                <span className="rounded-full border-2 border-ink bg-note-mint px-2.5 py-0.5 text-xs font-bold text-ink">
-                  On every plan
-                </span>
+                <p className="mt-4 text-sm leading-relaxed text-ink-soft">
+                  Ask questions right on the board — "what was the main action?", "what risks came up?" — and get
+                  answers grounded only in that thread's own nodes and transcript. No digging back through the map
+                  yourself, and nothing about the chat is stored — ask, get your answer, move on.
+                </p>
               </div>
-              <p className="mt-4 text-sm leading-relaxed text-ink-soft">
-                Ask questions right on the board — "what was the main action?", "what risks came up?" — and get
-                answers grounded only in that thread's own nodes and transcript. No digging back through the map
-                yourself, and nothing about the chat is stored — ask, get your answer, move on.
-              </p>
+
+              <TacklyAIPreview />
             </div>
 
-            <TacklyAIPreview />
+            <div className="grid items-center gap-8 rounded-2xl border-2 border-ink bg-paper-raised p-6 shadow-brutal-sm sm:grid-cols-2 sm:p-8">
+              <div className="sm:order-last">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-periwinkle-tint">
+                    <Share2 className="h-5 w-5 text-periwinkle-deep" />
+                  </div>
+                  <p className="font-display text-xl font-bold text-ink">Ready to share</p>
+                  <span className="rounded-full border-2 border-ink bg-note-sky px-2.5 py-0.5 text-xs font-bold text-ink">
+                    No account needed
+                  </span>
+                </div>
+                <p className="mt-4 text-sm leading-relaxed text-ink-soft">
+                  Everything tackled, ready to share. One click turns a finished thread into a clean, read-only
+                  board anyone can open — the map, not the meeting. Or invite up to three collaborators for full
+                  access while you're still mapping it together.
+                </p>
+              </div>
+
+              <ShareBoardPreview />
+            </div>
           </div>
         </section>
 
-        <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:pb-24">
+        <section className="mx-auto w-full max-w-6xl px-4 py-16 sm:py-24">
           <div className="mx-auto max-w-xl text-center">
-            <h2 className="font-display text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+            <p className="text-xs font-bold uppercase tracking-widest text-periwinkle-deep">
+              Simple, honest pricing
+            </p>
+            <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-ink sm:text-4xl">
               Plans &amp; pricing
             </h2>
             <p className="mt-3 text-ink-soft">
