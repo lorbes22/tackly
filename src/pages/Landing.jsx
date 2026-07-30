@@ -62,7 +62,7 @@ export default function Landing() {
   useDocumentMeta({
     title: "Tackly — the AI notetaker that maps your thinking, not just your transcript",
     description:
-      "Most AI notetakers hand you a transcript with a summary bolted on. Tackly maps ideas, decisions, risks, and questions live — from meetings, solo voice notes, or a pasted transcript — so you get structure, not just text.",
+      "Tackly maps meetings, calls, and rambling ideas into a live board of decisions, risks, and actions as you speak — then share it instantly, no account needed.",
   });
 
   return (
