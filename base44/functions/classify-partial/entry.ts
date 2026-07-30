@@ -56,10 +56,11 @@ Deno.serve(async (req) => {
       user: `Partial (unfinished) utterance: "${text}"`,
       tool: TOOL,
       maxTokens: 256,
-      // This system prompt is a fixed ~300 tokens — permanently below
-      // Google's 1024-token minimum for explicit caching. Attempting it
-      // anyway just wastes a round-trip AND poisons process-session's
-      // shared t1 cache cooldown every time this fires (see llm.ts).
+      // Explicit and left in place even though caching now defaults off
+      // everywhere (see llm.ts) — this system prompt is a fixed ~300
+      // tokens, permanently below Google's 1024-token minimum for explicit
+      // caching, so this call site should never opt in even if caching is
+      // re-enabled elsewhere later.
       allowGeminiCache: false,
     });
     if (costUsd > 0) {

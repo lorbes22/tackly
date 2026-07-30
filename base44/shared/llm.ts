@@ -33,15 +33,20 @@ export async function classifyForTier(opts: {
   user: string;
   tool: ClassifyTool;
   maxTokens?: number;
-  // classify-partial shares tier "t1" with process-session (same admin
-  // control knob) but its system prompt is a fixed ~300 tokens — permanently
-  // below Google's 1024-token minimum for explicit caching, not a transient
-  // failure. Letting it attempt caching anyway meant every single partial
-  // guess (fired constantly during live mic capture) failed cache creation
-  // and reset the SHARED t1 cooldown, which starved process-session's much
-  // larger, genuinely cacheable prompt of ever getting a stable cache — a
-  // real bug found live (2026-07-30). Pass false here to skip Gemini caching
-  // entirely for a call site whose prompt can never qualify.
+  // Gemini explicit caching is OPT-IN, not opt-out, as of 2026-07-30 — see
+  // FINDINGS.md §17/§18. Real live evidence across multiple sessions that
+  // day isolated the slowness to Google's `cachedContent`-referencing
+  // generateContent endpoint SPECIFICALLY: the plain (uncached) Gemini call
+  // — same model, same system prompt, same everything else — stayed fast
+  // and reliable throughout (confirming the user's own read: "Gemini is
+  // fast, always has been"), while every cached call, whether the cache was
+  // freshly created or already valid and simply being reused, consistently
+  // exceeded even a 2s response time. That's a property of Google's cache-
+  // serving path itself, not of Gemini's core model, and not something a
+  // timeout/retry can turn into "fast" — it can only bound the damage.
+  // Pass true to opt back in for a call site where caching's been verified
+  // to actually help (worth re-testing this from time to time — the
+  // infrastructure isn't necessarily always this way).
   allowGeminiCache?: boolean;
 }): Promise<ClassifyOutcome> {
   const rows = await opts.base44.asServiceRole.entities.LlmConfig.filter(
@@ -75,7 +80,7 @@ export async function classifyForTier(opts: {
     );
   }
 
-  if (cfg.provider === "google" && opts.allowGeminiCache === false) {
+  if (cfg.provider === "google" && opts.allowGeminiCache !== true) {
     const { data, usage } = await classifyWithGemini({
       apiKey,
       model: cfg.model,
