@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { HeroNodePopups } from "@/components/landing/HeroNodePopups";
 import { HeroMethodCards } from "@/components/landing/HeroMethodCards";
+import { TalkingBars } from "@/components/landing/TalkingBars";
 import { Badges } from "@/components/landing/Badges";
 import { ScrollRevealText } from "@/components/landing/ScrollRevealText";
 import { TacklyAIPreview } from "@/components/landing/TacklyAIPreview";
@@ -167,7 +168,7 @@ export default function Landing() {
             >
               <Link to={user ? "/app" : "/signup"} className={PRIMARY_CTA_CLASS}>
                 Try it for free
-                <ArrowRight className="h-4 w-4" />
+                <TalkingBars />
               </Link>
               <p className="text-xs font-medium text-ink-faint">No credit card. Free to start.</p>
             </div>
@@ -279,7 +280,7 @@ export default function Landing() {
               className="relative mt-7 inline-flex h-12 items-center gap-2 rounded-xl border-2 border-ink bg-white px-7 font-display text-base font-bold text-periwinkle-deep shadow-brutal-sm transition-transform hover:-translate-y-0.5"
             >
               Try it for free
-              <ArrowRight className="h-4 w-4" />
+              <TalkingBars />
             </Link>
           </div>
         </section>

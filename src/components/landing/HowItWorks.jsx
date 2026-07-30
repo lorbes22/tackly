@@ -54,8 +54,8 @@ const CARDS = [
   {
     bg: "bg-note-mint",
     icon: Mic,
-    title: "You talk.",
-    body: "Hold to talk, invite the bot into a meeting, or paste a transcript — however the thought shows up.",
+    title: "You talk. Or they do.",
+    body: "Hold to talk solo, invite the bot into a meeting — it hears everyone on the call, not just you — or paste a transcript.",
     preview: <MicPulse />,
   },
   {
