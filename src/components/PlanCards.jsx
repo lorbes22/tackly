@@ -71,10 +71,13 @@ export function PlanCards({ className = "" }) {
                   {isFree ? "£0" : `£${plan.price_monthly}`}
                   <span className="text-sm font-medium text-ink-soft">/mo</span>
                 </p>
+                {plan.description && (
+                  <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">{plan.description}</p>
+                )}
                 {plan.features?.length > 0 && (
-                  <ul className="mt-4 space-y-2">
+                  <ul className="mt-5 space-y-3 border-t border-ink/10 pt-5">
                     {plan.features.map((f) => (
-                      <li key={f} className="flex items-start gap-2 text-sm text-ink-soft">
+                      <li key={f} className="flex items-start gap-2.5 text-sm leading-snug text-ink-soft">
                         <Check className="mt-0.5 h-4 w-4 shrink-0 text-periwinkle-deep" />
                         {f}
                       </li>

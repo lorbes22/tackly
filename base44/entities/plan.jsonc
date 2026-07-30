@@ -12,6 +12,10 @@
       "minimum": 0,
       "description": "Monthly price in GBP"
     },
+    "description": {
+      "type": "string",
+      "description": "One-line summary shown under the price on the plan card (e.g. 'The full product — capped at 30 minutes a month.')"
+    },
     "minute_limit": {
       "type": "integer",
       "default": 0,

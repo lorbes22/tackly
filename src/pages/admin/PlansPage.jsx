@@ -96,6 +96,7 @@ function FeatureEditor({ plan, onChange }) {
 export default function PlansPage() {
   const [plans, setPlans] = useState(null);
   const [drafts, setDrafts] = useState({});
+  const [descDrafts, setDescDrafts] = useState({});
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState("");
 
@@ -104,6 +105,7 @@ export default function PlansPage() {
       .then((data) => {
         setPlans(data);
         setDrafts(Object.fromEntries(data.map((p) => [p.id, p.stripe_price_id || ""])));
+        setDescDrafts(Object.fromEntries(data.map((p) => [p.id, p.description || ""])));
       })
       .catch((err) => setError(err.message || "Couldn't load plans."));
   }, []);
@@ -116,6 +118,20 @@ export default function PlansPage() {
       setPlans((prev) =>
         prev.map((p) => (p.id === planId ? { ...p, stripe_price_id: drafts[planId].trim() } : p))
       );
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || "Couldn't save that plan.");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const saveDescription = async (planId) => {
+    setSavingId(`${planId}-desc`);
+    setError("");
+    try {
+      const description = descDrafts[planId].trim();
+      await Plan.update(planId, { description });
+      setPlans((prev) => prev.map((p) => (p.id === planId ? { ...p, description } : p)));
     } catch (err) {
       setError(err.response?.data?.error || err.message || "Couldn't save that plan.");
     } finally {
@@ -165,6 +181,29 @@ export default function PlansPage() {
                 </p>
               </div>
             </div>
+            <label className="mt-3 block">
+              <span className="mb-1 block text-xs font-medium text-ink-soft">
+                One-line description (shown under the price on the card)
+              </span>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={descDrafts[plan.id] ?? ""}
+                  onChange={(e) => setDescDrafts((prev) => ({ ...prev, [plan.id]: e.target.value }))}
+                  placeholder="The full product — capped at 30 minutes a month."
+                  className="h-10 flex-1 rounded-lg border border-line bg-paper-raised px-3 text-sm placeholder:text-ink-faint focus:border-periwinkle"
+                />
+                <button
+                  onClick={() => saveDescription(plan.id)}
+                  disabled={
+                    savingId === `${plan.id}-desc` || descDrafts[plan.id] === (plan.description || "")
+                  }
+                  className="h-10 shrink-0 rounded-lg bg-periwinkle px-4 text-sm font-semibold text-white transition-colors hover:bg-periwinkle-deep disabled:opacity-50"
+                >
+                  {savingId === `${plan.id}-desc` ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </label>
             <label className="mt-3 block">
               <span className="mb-1 block text-xs font-medium text-ink-soft">
                 Stripe Price id
