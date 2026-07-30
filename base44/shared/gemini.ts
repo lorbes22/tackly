@@ -66,15 +66,20 @@ export async function classifyWithGemini(opts: {
 }
 
 // Google's cache-specific endpoints (create + cached generateContent) have
-// been observed hanging/timing out (524) well past what T1's "under 1s"
-// target can tolerate, with no timeout of their own to bound the damage — a
-// slow cache endpoint could stall an entire classification instead of just
-// falling back to the plain (proven-reliable, pre-caching-era) uncached
-// call. Caching is explicitly a cost optimization, never something that
-// should be allowed to make T1 SLOWER than not caching at all, so both
-// cache-specific fetches below are bounded and fail fast into the existing
-// fallback path on a timeout.
-const CACHE_FETCH_TIMEOUT_MS = 6000;
+// been observed hanging/timing out (524, and consistently exceeding even a
+// 6s bound in real live-session testing on 2026-07-30) well past what T1's
+// "under 1s" target can tolerate, with no timeout of their own to bound the
+// damage — a slow cache endpoint could stall an entire classification
+// instead of just falling back to the plain (proven-reliable, pre-caching-
+// era) uncached call. Caching is explicitly a cost optimization, never
+// something that should be allowed to make T1 SLOWER than not caching at
+// all, so both cache-specific fetches below are bounded and fail fast into
+// the existing fallback path on a timeout. Kept short (not the original 6s)
+// precisely because the failure mode observed live was the endpoint hanging
+// near/at 6s on every single call in a session — a longer bound just means
+// paying more dead time before every fallback while the endpoint is having
+// a bad stretch, with no corresponding chance of success.
+const CACHE_FETCH_TIMEOUT_MS = 2000;
 
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
