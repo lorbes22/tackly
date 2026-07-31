@@ -603,7 +603,10 @@ export default function Board() {
   // nothing here re-fetches the board.
   const pendingQueueRef = useRef({ ids: [], provisionals: {} });
   const flushTimerRef = useRef(null);
-  const BATCH_DEBOUNCE_MS = 2500;
+  // Was 2500ms — real-time feel matters more than the marginal call-count
+  // savings from waiting almost 2.5s to batch utterances that usually aren't
+  // there yet anyway; BATCH_MAX_SIZE still catches genuine rapid-fire bursts.
+  const BATCH_DEBOUNCE_MS = 700;
   const BATCH_MAX_SIZE = 4;
 
   const liveProcessBatch = useCallback(
