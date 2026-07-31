@@ -23,6 +23,7 @@
 17. [Gemini T1 caching was silently broken since activation — the real "T1 feels slower" cause (2026-07-30)](#17-gemini-t1-caching-was-silently-broken-since-activation--the-real-t1-feels-slower-cause-2026-07-30)
 18. [Correction to §17 — the slowness was never Gemini, it was the cache-serving endpoint; caching disabled by default (2026-07-30)](#18-correction-to-17--the-slowness-was-never-gemini-it-was-the-cache-serving-endpoint-caching-disabled-by-default-2026-07-30)
 19. [RLS security fix, round 2 — a `good-version` rollback had reopened read access (2026-07-30)](#19-rls-security-fix-round-2--a-good-version-rollback-had-reopened-read-access-2026-07-30)
+20. [T1 authoritative placement was gated behind a flat 2500ms batching delay (2026-07-30)](#20-t1-authoritative-placement-was-gated-behind-a-flat-2500ms-batching-delay-2026-07-30)
 
 ---
 
@@ -516,3 +517,20 @@ User ran Base44's own security scanner again and got 11 fresh "Critical" finding
 **Root cause: `good-version` predates the RLS work entirely.** That branch was cut before Finding 13 (create-side RLS) ever landed, so it never had owner-scoped read rules either — confirmed by the user directly. Finding 15 already established that a rollback to `good-version` deploys whatever entity config is on that branch; that incident only re-pushed the create-side fix at the time because create was the specific gap being chased that day, not because read was untouched by the same rollback. Same mechanism, same branch, just the read-side half of it going unnoticed until this scan caught it. Nothing mysterious — `entities push` from `main` is the correct fix any time `good-version` (or any pre-RLS branch/state) has been live, and is worth re-running as a matter of course after any rollback.
 
 **No functional impact expected or observed**: every legitimate read in this app already goes through an authenticated call (frontend behind `RequireAuth`) or a service-role backend function that resolves access explicitly (`get-board-access`, `get-shared-board`) — nothing in the real product relies on anonymous entity reads. This closes a door real users never used.
+
+---
+
+## 20. T1 authoritative placement was gated behind a flat 2500ms batching delay (2026-07-30)
+
+Same day, after the Gemini-caching fix (Findings 17-18) already brought T1/T2 down to a 2-3s baseline, the user asked why real-time placement still felt slow — pointing at `BATCH_DEBOUNCE_MS = 2500` in `Board.jsx` and asking whether it could safely drop to 600-800ms, and whether Tier 1 was really supposed to already understand when it had "enough context" for a provisional node (with Tier 2 correcting later if needed).
+
+**Traced the full staged-provisional pipeline** (`Board.jsx`, live mic path) to answer both questions precisely:
+1. **Stage 1** — instant raw placeholder node, no LLM, fires on the first 3+ words of a partial transcript.
+2. **Stage 2** (`classify-partial`, 500ms debounce, once per forming node) — the "T1 already understands context" the user was thinking of; settles the card's type/title early in ~90% of cases.
+3. **Stage 3** (`process-session`, on `end_of_turn`) — the actual **authoritative** placement: commits the real type, parent, and edges. This is the step that matters for "is it actually on the board yet," and it's not what the user's mental model of "T2 corrects" maps to — Tier 2 (`consolidate-session`) is a separate periodic merge pass every 20 utterances, uninvolved in single-utterance placement at all (same terminology point already made in Finding 18).
+
+**The bug wasn't accuracy, it was a pure cost-batching tax stacked in front of Stage 3.** `queueForProcessing` (`Board.jsx`) queued each finalized utterance and only flushed to `process-session` after `BATCH_DEBOUNCE_MS` (2500ms) of silence, or once 4 utterances queued (`BATCH_MAX_SIZE`) — added originally (PLAN.md §1d) to avoid paying `process-session`'s fixed system-prompt/tool-use overhead once per utterance. In the common case (one utterance, then a pause) this meant waiting nearly 2.5s for the authoritative call to even *start*, on top of its own 2-3s round-trip — a worst case around 5s from finishing a sentence to it landing as a real, connected node, with nothing in that wait actually doing useful classification work.
+
+**Fixed**: `BATCH_DEBOUNCE_MS` dropped from `2500` to `700` (`Board.jsx:606`). `BATCH_MAX_SIZE` (4) is unchanged and still batches genuine rapid-fire utterances together; the real-world cost impact is a modest bump in `process-session` call *count* in the normal single-utterance case, not a change in per-call cost (same prompt either way).
+
+**Verified**: production build + `site deploy`, asset hash confirmed live via `curl` against `tackly.co`. User tested live afterward and confirmed: *"i just tested it out... It works!"*
